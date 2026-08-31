@@ -6,10 +6,10 @@
   <meta name="color-scheme" content="light">
   <title>NFL Fantasy Draft Board</title>
   <link rel="preconnect" href="https://a.espncdn.com">
-  <link rel="stylesheet" href="styles.css?v=20260831-live-strategy">
+  <link rel="stylesheet" href="styles.css?v=20260831-current-forecast">
   <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
-  <script src="projections.js?v=20260831-live-strategy"></script>
-  <script src="app.js?v=20260831-live-strategy" defer></script>
+  <script src="projections.js?v=20260831-current-forecast"></script>
+  <script src="app.js?v=20260831-current-forecast" defer></script>
 </head>
 <body>
   <div id="error" class="fatal" hidden></div>
@@ -133,13 +133,13 @@
         <table class="rankings-table">
           <thead>
             <tr>
-              <th class="rank-cell">Draft rank<small>Live · Hindsight</small></th>
-              <th class="rank-cell">Points rank<small>Model · Actual</small></th>
+              <th class="rank-cell">Draft rank<small id="draftRankSub">Live · Hindsight</small></th>
+              <th class="rank-cell">Points rank<small id="pointsRankSub">Model · Actual</small></th>
               <th>Player</th>
               <th>Pos</th>
               <th>Team</th>
               <th class="number-cell">Projection</th>
-              <th class="number-cell">Actual</th>
+              <th class="number-cell actual-column">Actual</th>
               <th class="number-cell">Per game</th>
               <th class="number-cell" title="Projected-point gap to the best same-position option expected at your next turn">Next-turn gap</th>
               <th>Status</th>

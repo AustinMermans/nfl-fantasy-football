@@ -57,6 +57,11 @@ purposes but excluded from the processed development table and every current
 backtest. Opening it requires a separate explicit operation that writes an
 irreversible manifest under `results/.holdout_opened`.
 
+For the 2026 production forecast, the already-selected specifications are refit
+through completed 2025 games. This is a time-forward production update, not a
+new model-selection fold; the frozen 2025 evaluation must still be reported
+separately and cannot be reconstructed from the refit.
+
 Primary component metrics are RMSE and MAE, with Spearman rank correlation.
 Poisson deviance is also reported when the target is nonnegative. Reports split
 the complete active-roster population from a pregame fantasy-relevant slice

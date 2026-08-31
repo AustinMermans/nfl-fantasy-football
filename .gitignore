@@ -11,4 +11,5 @@ data/processed/
 results/*.csv
 results/*.json
 results/*.parquet
+results/current_forecast_generated_at.txt
 results/.holdout_opened

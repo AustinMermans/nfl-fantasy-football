@@ -8,7 +8,7 @@ import pandas as pd
 from .calibration import nested_calibration_backtest
 from .config import PROJECT_ROOT, load_config
 from .data import download_nflverse, load_player_games
-from .draft_board import build_player_rankings, export_draft_board
+from .draft_board import build_player_rankings, export_draft_board, export_preseason_board
 from .draft_strategy import simulate_draft_policy
 from .evaluation import BacktestSpec, summarize_backtest, walk_forward_backtest
 from .factor_study import screen_context_factors
@@ -26,6 +26,7 @@ from .market import (
     polymarket_player_market_catalog,
 )
 from .participation import summarize_participation, walk_forward_participation
+from .production import build_preseason_forecasts, write_production_artifacts
 
 
 DEFAULT_TARGETS = ("passing_yards", "rushing_yards", "receiving_yards")
@@ -283,6 +284,24 @@ def _draft_policy_stress_test(args: argparse.Namespace) -> None:
     print(f"wrote draft-policy stress test to {destination}")
 
 
+def _preseason_forecast(args: argparse.Namespace) -> None:
+    fantasy, components, features, as_of = build_preseason_forecasts(
+        args.season, refresh=args.refresh
+    )
+    write_production_artifacts(fantasy, components, features)
+    destination = export_preseason_board(
+        fantasy,
+        components,
+        features,
+        season=args.season,
+        data_as_of=as_of,
+    )
+    print(
+        f"wrote {args.season} preseason forecasts for "
+        f"{fantasy['player_id'].nunique()} players to {destination}"
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="nfl-fantasy")
     commands = parser.add_subparsers(required=True)
@@ -340,6 +359,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--scenarios", nargs="+", default=["balanced", "rb_rush", "wr_rush"]
     )
     draft_policy.set_defaults(handler=_draft_policy_stress_test)
+    preseason = commands.add_parser("preseason-forecast")
+    preseason.add_argument("--season", type=int, required=True)
+    preseason.add_argument("--refresh", action="store_true")
+    preseason.set_defaults(handler=_preseason_forecast)
     return parser
 
 

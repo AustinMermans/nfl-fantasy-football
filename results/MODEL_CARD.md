@@ -2,12 +2,11 @@
 
 ## Status
 
-Development model. The 2025 final holdout has not been opened. Traditional
-non-PPR scoring is now the working assumption. The draft board publishes the
-latest 2024 out-of-sample development ranking for model inspection; it is not a
-current-season preseason ranking or a globally optimized draft order. The live
-board now accepts league size and draft slot, with the traditional lineup shown
-below as its default.
+Development selections with a production preseason refit. Traditional non-PPR
+scoring is the working assumption. The draft board now publishes current 2026
+preseason forecasts using frozen model choices refit through completed 2025
+games. The board accepts league size and draft slot, with the traditional lineup
+shown below as its default.
 
 ## Data and cohort
 
@@ -63,10 +62,9 @@ only one recognized passing-yard contract. These are catalog counts before
 player/game mapping and quote-quality filters.
 
 No market-prop coefficient or blend weight has been fit. Kalshi begins after the
-2012-2024 development window and overlaps the locked 2025 holdout; using it for
-selection now would contaminate the final test. Polymarket's 2024 yardage sample
-is too sparse. The official model therefore remains unchanged while the feeds
-collect forward shadow predictions.
+2012-2024 development window and Polymarket's 2024 yardage sample is too sparse.
+The production refit therefore retains the previously frozen specifications
+while the feeds collect forward shadow predictions.
 
 Every context forecast is opponent-aware. It includes the opposing defense's
 strictly lagged eight-game allowance for the target statistic and position,
@@ -88,21 +86,32 @@ RMSE `5.82`, and Spearman `0.616`, so the model improves RMSE by `3.4%` and
 meaningfully improves ordering while remaining only moderately precise at the
 single-game level.
 
-The generated draft board aggregates those game-level forecasts by player for
-the 2024 validation season. It reports projected season points, points per game,
-position rank, model lift versus recent form, and the selected component-stat
-forecasts. Each player expands to the underlying weekly opponent, fantasy-point,
-and position-relevant component forecasts. The board deliberately labels the
-season and development status to avoid presenting retrospective validation
-output as a live forecast.
+The generated draft board aggregates current 2026 game-level forecasts by
+player. It reports projected season points, points per game, position rank,
+model lift versus recent form, current depth rank, and the selected component-
+stat forecasts. Each player expands to the underlying weekly opponent, fantasy-
+point, and position-relevant component forecasts. The production refit retains
+the specifications selected in walk-forward development; it does not reopen
+feature or model selection on 2025.
 
-The validation board also exposes actual 2024 fantasy points by season and game
-for direct forecast auditing. Actual outcomes are display-only and do not enter
-projection ranks, replacement values, or draft ranks.
+The current preseason cohort uses the active Week 1 roster and the latest daily
+nflverse depth chart. Every future week is featurized independently against
+completed 2012-2025 history, preventing earlier unplayed games from entering
+later-week rolling features as zeros. Zero-history players receive the median
+forecast for experienced players at the same position and current depth rank.
+Experienced reserves whose historical workload exceeds their current nonstarter
+role are capped at that same role median. The adjustment audit is written to
+`results/current_role_adjustments.csv`.
 
-Rows report four distinct ranks: a live recommendation and hindsight format
-value, plus raw model and actual season-points ranks. The hindsight ranking is
-an evaluation benchmark and never enters the recommendation.
+The live board does not show nonexistent 2026 actuals. The retrospective
+validation artifacts remain available in the research outputs, but actual
+outcomes never enter current projection ranks, replacement values, or draft
+ranks.
+
+The current board reports the live recommendation and raw model-points rank.
+Retrospective validation builds additionally report hindsight format value and
+actual season-points rank; those evaluation benchmarks never enter the live
+recommendation.
 
 Replacement demand is now derived from the selected team count and the default
 1QB/2RB/2WR/1TE/1 FLEX/1K starting lineup. Base slots are allocated first and
@@ -165,5 +174,6 @@ cross-fold grouped improvement exceeds the screened subset.
 2. Accumulate and map shadow player-prop quotes, then finish their common-support
    and incremental-value studies alongside NGS and charting.
 3. Freeze the model and calibration manifest.
-4. Open the 2025 holdout once and report every metric without further tuning.
-5. Add league scoring, simulate correlated player outcomes, then optimize the draft.
+4. Preserve the frozen 2025 evaluation manifest separately from production
+   refits and report it without further tuning.
+5. Simulate correlated player outcomes, then optimize the draft.

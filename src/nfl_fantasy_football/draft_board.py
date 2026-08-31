@@ -271,3 +271,59 @@ def export_draft_board(
         encoding="utf-8",
     )
     return destination
+
+
+def export_preseason_board(
+    fantasy: pd.DataFrame,
+    components: pd.DataFrame,
+    future_features: pd.DataFrame,
+    *,
+    season: int,
+    data_as_of: str,
+    web_dir: Path | None = None,
+) -> Path:
+    """Publish a current preseason board without retrospective actual outcomes."""
+    destination_dir = web_dir or PROJECT_ROOT / "web"
+    players = build_player_rankings(fantasy, components, season=season)
+    depth = (
+        future_features.sort_values(["player_id", "week"])
+        .groupby("player_id", as_index=False)
+        .first()[
+            ["player_id", "depth_rank", "depth_slot", "pos_name", "role_adjustment"]
+        ]
+        .set_index("player_id")
+        .to_dict("index")
+    )
+    for player in players:
+        role = depth.get(player["id"], {})
+        player["depthRank"] = int(role.get("depth_rank", 0) or 0)
+        player["depthSlot"] = int(role.get("depth_slot", 0) or 0)
+        player["depthRole"] = str(role.get("pos_name", ""))
+        player["projectionNote"] = str(role.get("role_adjustment", "none"))
+    payload = {
+        "generatedAt": datetime.now(UTC).isoformat(),
+        "dataAsOf": data_as_of,
+        "trainingThrough": season - 1,
+        "projectionSeason": season,
+        "forecastType": "preseason",
+        "hasActuals": False,
+        "scoring": "Traditional non-PPR",
+        "scope": f"{season} preseason forecast",
+        "draftFormat": "12-team · 1 QB · 2 RB · 2 WR · 1 TE · 1 FLEX · 1 K",
+        "draftMethod": "Format-derived starter value with current roster and depth chart",
+        "draftConfig": {
+            "teams": 12,
+            "draftSlot": 1,
+            "rosterSlots": DEFAULT_ROSTER_SLOTS,
+        },
+        "players": players,
+    }
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    destination = destination_dir / "projections.js"
+    destination.write_text(
+        "window.NFL_DRAFT_DATA = "
+        + json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
+        + ";\n",
+        encoding="utf-8",
+    )
+    return destination

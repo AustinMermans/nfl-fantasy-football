@@ -109,6 +109,8 @@ h1 { margin: 0; font-size: 38px; line-height: 1.05; letter-spacing: 0; }
 .rank-pair strong { display: block; font-size: 14px; font-variant-numeric: tabular-nums; }
 .rank-pair small { display: block; margin-top: 3px; color: var(--muted); font-size: 7px; font-weight: 850; text-transform: uppercase; }
 .rank-pair span + span { border-left: 1px solid var(--line); }
+.no-actuals .actual-column, .no-actuals .actual-rank { display: none; }
+.no-actuals .rank-pair { grid-template-columns: 1fr; }
 .player-cell { min-width: 0; display: flex; align-items: center; gap: 11px; }
 .player-cell img { width: 34px; height: 34px; flex: 0 0 auto; object-fit: contain; }
 .player-cell span { min-width: 0; }

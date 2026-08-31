@@ -2,7 +2,7 @@
   "use strict";
 
   const data = window.NFL_DRAFT_DATA;
-  const storageKey = "nfl-fantasy-draft-board-v2";
+  const storageKey = "nfl-fantasy-draft-board-v3";
   const legacyStorageKey = "nfl-fantasy-draft-board-v1";
   const defaultConfig = data?.draftConfig || {
     teams: 12, draftSlot: 1, rosterSlots: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1 },
@@ -273,19 +273,19 @@
         <td><strong>${game.week}</strong></td>
         <td><span class="matchup-venue">${game.venue}</span> ${escapeHtml(game.opponent)}</td>
         <td class="number-cell weekly-projection">${game.projectedPoints.toFixed(2)}</td>
-        <td class="number-cell actual-result">${game.actualPoints.toFixed(2)}</td>
+        <td class="number-cell actual-result actual-column">${data.hasActuals ? game.actualPoints.toFixed(2) : "-"}</td>
         ${columns.map(([, key]) => `<td class="number-cell">${gameStat(game, key).toFixed(1)}</td>`).join("")}
       </tr>
     `).join("");
     return `
       <div class="weekly-wrap">
         <div class="detail-heading">
-          <div><strong>Game-by-game projections</strong><span>${data.projectionSeason} out-of-sample validation</span></div>
-          <small>Actual reflects the completed ${data.projectionSeason} validation result</small>
+          <div><strong>Game-by-game projections</strong><span>${data.forecastType === "preseason" ? `${data.projectionSeason} current preseason forecast` : `${data.projectionSeason} out-of-sample validation`}</span></div>
+          <small>${data.hasActuals ? `Actual reflects the completed ${data.projectionSeason} validation result` : "Actual points populate after games are completed"}</small>
         </div>
         <div class="weekly-scroll">
           <table class="weekly-table">
-            <thead><tr><th>Week</th><th>Matchup</th><th class="number-cell">Projected</th><th class="number-cell">Actual</th>${headers}</tr></thead>
+            <thead><tr><th>Week</th><th>Matchup</th><th class="number-cell">Projected</th><th class="number-cell actual-column">Actual</th>${headers}</tr></thead>
             <tbody>${rows}</tbody>
           </table>
         </div>
@@ -317,32 +317,32 @@
     const rowClass = status === "available" ? "" : ` ${status}`;
     const recommendation = recommendations.byId.get(player.id);
     const liveRank = recommendation?.rank || recommendations.metrics.get(player.id).rank;
-    const hindsight = actualMetrics.get(player.id);
-    const displayedDraftValue = state.sort === "actual_draft" ? hindsight.value : (recommendation?.nextTurnGap ?? recommendations.metrics.get(player.id).value);
+    const hindsight = actualMetrics?.get(player.id);
+    const displayedDraftValue = state.sort === "actual_draft" && hindsight ? hindsight.value : (recommendation?.nextTurnGap ?? recommendations.metrics.get(player.id).value);
     return `
       <tr class="player-row${rowClass}" data-id="${escapeHtml(player.id)}">
         <td class="rank-cell">
           <div class="rank-pair">
             <span><strong>${liveRank}</strong><small>Live</small></span>
-            <span><strong>${hindsight.rank}</strong><small>Hindsight</small></span>
+            <span class="actual-rank"><strong>${hindsight?.rank || "-"}</strong><small>Hindsight</small></span>
           </div>
         </td>
         <td class="rank-cell">
           <div class="rank-pair">
             <span><strong>${player.rank}</strong><small>Model</small></span>
-            <span><strong>${player.actualRank}</strong><small>Actual</small></span>
+            <span class="actual-rank"><strong>${data.hasActuals ? player.actualRank : "-"}</strong><small>Actual</small></span>
           </div>
         </td>
         <td>
           <div class="player-cell">
             <img src="${teamLogo(player.team)}" alt="" onerror="this.hidden=true">
-            <span><strong>${escapeHtml(player.name)}</strong><small>${player.projectedGames} projected games</small></span>
+            <span><strong>${escapeHtml(player.name)}</strong><small>${player.projectedGames} projected games${player.depthRank ? ` · depth ${player.position}${player.depthRank}` : ""}${player.projectionNote && player.projectionNote !== "none" ? ` · ${escapeHtml(player.projectionNote)}` : ""}</small></span>
           </div>
         </td>
         <td><span class="${positionClass(player.position)}">${escapeHtml(player.position)}</span></td>
         <td class="team-cell">${escapeHtml(player.team)}</td>
         <td class="number-cell projection"><strong>${player.projectedPoints.toFixed(1)}</strong></td>
-        <td class="number-cell actual-total">${player.actualPoints.toFixed(1)}</td>
+        <td class="number-cell actual-total actual-column">${data.hasActuals ? player.actualPoints.toFixed(1) : "-"}</td>
         <td class="number-cell">${player.pointsPerGame.toFixed(2)}</td>
         <td class="number-cell draft-value" title="${state.sort === "actual_draft" ? "Hindsight value over the format-derived replacement player" : "Projected-point gap to the best same-position player expected to survive until your next turn"}">${displayedDraftValue > 0 ? "+" : ""}${displayedDraftValue.toFixed(1)}</td>
         <td>${statusMarkup(player, status)}</td>
@@ -399,7 +399,7 @@
 
   function render() {
     const recommendations = recommendationState();
-    const actualMetrics = formatMetrics("actualPoints");
+    const actualMetrics = data.hasActuals ? formatMetrics("actualPoints") : null;
     const players = filteredPlayers(recommendations, actualMetrics);
     $("rankingsBody").innerHTML = players.map((player) => playerRow(player, recommendations, actualMetrics)).join("");
     $("emptyState").hidden = players.length > 0;
@@ -490,12 +490,20 @@
     $("slotInput").value = state.draftSlot;
     $("scenarioSelect").value = state.scenario;
     $("policySelect").value = state.policy;
-    $("seasonLabel").textContent = `${data.projectionSeason} validation season`;
-    $("modelStatus").textContent = `${data.scoring} · development model`;
-    $("methodLabel").textContent = `${data.scope}. Recommendations combine game-level forecasts, format-derived replacement value, your roster, and the projected pool at your next snake turn; this remains a ${data.projectionSeason} out-of-sample validation board, not a live ${new Date().getFullYear()} preseason ranking.`;
+    $("seasonLabel").textContent = data.forecastType === "preseason" ? `${data.projectionSeason} preseason` : `${data.projectionSeason} validation season`;
+    $("modelStatus").textContent = `${data.scoring} · ${data.forecastType === "preseason" ? "current forecast" : "development model"}`;
+    $("methodLabel").textContent = data.forecastType === "preseason"
+      ? `${data.scope}. Frozen model choices refit through ${data.trainingThrough}; current active roster, depth chart, schedule, and game lines as of ${new Date(data.dataAsOf).toLocaleString()}.`
+      : `${data.scope}. Recommendations combine game-level forecasts, format-derived replacement value, your roster, and the projected pool at your next snake turn; this remains a ${data.projectionSeason} out-of-sample validation board, not a live ${new Date().getFullYear()} preseason ranking.`;
     $("footerScope").textContent = `${data.projectionSeason} · ${data.scoring} · ${data.players.length} fantasy-relevant players`;
     const generated = new Date(data.generatedAt);
     $("updatedLabel").textContent = `Generated ${generated.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
+    if (!data.hasActuals) {
+      document.body.classList.add("no-actuals");
+      $("draftRankSub").textContent = "Live recommendation";
+      $("pointsRankSub").textContent = "Model";
+      $("sortSelect").querySelectorAll('option[value="actual"], option[value="actual_draft"]').forEach((option) => { option.hidden = true; option.disabled = true; });
+    }
     bindEvents();
     render();
     $("app").hidden = false;

@@ -35,6 +35,7 @@ nfl-fantasy market-catalog-audit
 nfl-fantasy market-feature-audit --quotes path/to/canonical_quotes.parquet
 nfl-fantasy draft-board
 nfl-fantasy draft-policy-stress-test
+nfl-fantasy preseason-forecast --season 2026 --refresh
 python -m pytest
 ```
 
@@ -59,12 +60,24 @@ available prop history from masquerading as model improvement.
 
 ## Draft board
 
-Run `nfl-fantasy draft-board`, then open `web/index.html`. The board shows the
-latest available out-of-sample development projections, supports search and
-position filters, expands each player into opponent-aware game-by-game and
-component projections, and stores Mine/Taken actions and undo history in the
-local browser. It is a model-inspection view until a current-season production
-forecast and final league roster settings are available.
+Run `nfl-fantasy draft-board` to rebuild the retrospective validation view, or
+`nfl-fantasy preseason-forecast --season 2026 --refresh` to rebuild the current
+board, then open `web/index.html`. The interface supports search and position
+filters, expands each player into opponent-aware game-by-game and component
+projections, and stores Mine/Taken actions and undo history in the local browser.
+
+The published board now runs the frozen component-model choices as a current
+2026 preseason forecast. The production command refits those selected models
+through completed 2025 games and forecasts every 2026 matchup from the active
+Week 1 roster, the latest daily depth chart, current schedule, and available
+game lines. Each future week is featurized independently from completed history,
+so an unplayed earlier week is never treated as a zero-stat result.
+
+Players with no NFL history receive the median model projection of experienced
+players at the same position and current depth rank. Experienced players listed
+beyond the normal starting depth are capped at that role median when their stale
+history would otherwise imply starter volume. These are explicit preseason role
+priors, retained in `results/current_role_adjustments.csv` when the command runs.
 
 The live draft sort is a sequential recommendation rather than a fixed weighted
 list. League size and lineup slots determine replacement levels directly: base
@@ -100,19 +113,13 @@ before each game, including in-season role and injury updates, rather than one
 frozen snapshot available before Week 1. A valid preseason policy evaluation
 still requires yearly Week-0 feature snapshots and point-in-time ADP.
 
-Because the current board is built from the completed 2024 validation season,
-it also reports and sorts by actual fantasy points at the season and game level.
-Actual outcomes are evaluation context only and do not enter the draft-value
-calculation.
-
-Every player row shows two paired audits: live model recommendation versus
-hindsight format value from actual outcomes, and model projected-points rank
-versus actual-points rank. The hindsight column recomputes replacement value
-from realized scoring under the selected league size; it is not a claim that a
-single static order is a globally optimal draft.
+The current board omits hindsight and actual columns until 2026 games are
+completed. Historical validation outputs remain in `results/`; no realized
+outcome enters the live recommendation or replacement-value calculation.
 
 The public GitHub Pages site contains only this draft-board interface. Pushes to
 `main` run the test suite and deploy the static `web/` directory through
-`.github/workflows/pages.yml`.
+`.github/workflows/pages.yml`. The workflow also refreshes and deploys current
+inputs daily at 11:00 UTC, which is 4:00 AM Pacific during daylight time.
 
 See `docs/METHODOLOGY.md`, `docs/SOURCES.md`, and `results/MODEL_CARD.md`.
