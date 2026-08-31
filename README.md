@@ -59,6 +59,9 @@ it also reports and sorts by actual fantasy points at the season and game level.
 Actual outcomes are evaluation context only and do not enter the draft-value
 calculation.
 
+Every player row shows draft rank, raw model projected-points rank, and realized
+actual-points rank side by side.
+
 The public GitHub Pages site contains only this draft-board interface. Pushes to
 `main` run the test suite and deploy the static `web/` directory through
 `.github/workflows/pages.yml`.

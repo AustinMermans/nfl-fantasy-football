@@ -141,10 +141,15 @@
     const status = statusFor(player.id);
     const expanded = state.expanded === player.id;
     const rowClass = status === "available" ? "" : ` ${status}`;
-    const displayedRank = state.sort === "draft" ? player.draftRank : state.sort === "actual" ? player.actualRank : player.rank;
     return `
       <tr class="player-row${rowClass}" data-id="${escapeHtml(player.id)}">
-        <td class="rank-cell"><strong>${displayedRank}</strong><small>${player.position}${player.positionRank}</small></td>
+        <td class="rank-cell">
+          <div class="rank-comparison">
+            <span><strong>${player.draftRank}</strong><small>Draft</small></span>
+            <span><strong>${player.rank}</strong><small>Model</small></span>
+            <span><strong>${player.actualRank}</strong><small>Actual</small></span>
+          </div>
+        </td>
         <td>
           <div class="player-cell">
             <img src="${teamLogo(player.team)}" alt="" onerror="this.hidden=true">

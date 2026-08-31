@@ -82,6 +82,10 @@ The validation board also exposes actual 2024 fantasy points by season and game
 for direct forecast auditing. Actual outcomes are display-only and do not enter
 projection ranks, replacement values, or draft ranks.
 
+Rows report three distinct ranks: draft rank from the replacement-value
+heuristic, model rank from projected season points, and realized rank from
+actual season points.
+
 Draft order uses value over position-specific replacement under an assumed
 12-team, 1QB/2RB/2WR/1TE/1 FLEX lineup. Replacement ranks are QB12, RB30, WR36,
 TE12, and K12. Positive replacement value is multiplied by explicit positional

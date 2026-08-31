@@ -82,7 +82,7 @@ h1 { margin: 0; font-size: 38px; line-height: 1.05; letter-spacing: 0; }
 .rankings-table th { height: 42px; padding: 0 14px; color: var(--muted); background: #f8faf8; border-bottom: 1px solid var(--line); font-size: 10px; text-align: left; text-transform: uppercase; }
 .rankings-table td { height: 62px; padding: 8px 14px; border-bottom: 1px solid #e7eae8; font-size: 12px; }
 .rankings-table tbody tr:last-child td { border-bottom: 0; }
-.rankings-table th:nth-child(1) { width: 74px; }
+.rankings-table th:nth-child(1) { width: 142px; }
 .rankings-table th:nth-child(2) { width: 25%; }
 .rankings-table th:nth-child(3) { width: 66px; }
 .rankings-table th:nth-child(4) { width: 68px; }
@@ -93,8 +93,11 @@ h1 { margin: 0; font-size: 38px; line-height: 1.05; letter-spacing: 0; }
 .player-row:hover { background: #fafcfb; }
 .player-row.mine { background: var(--green-soft); }
 .player-row.other { color: #858d88; background: #f4f5f4; }
-.rank-cell strong { display: block; font-size: 15px; }
-.rank-cell small { display: block; margin-top: 3px; color: var(--muted); font-size: 9px; font-weight: 800; }
+.rank-comparison { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+.rank-comparison span { min-width: 0; text-align: center; }
+.rank-comparison strong { display: block; font-size: 14px; font-variant-numeric: tabular-nums; }
+.rank-comparison small { display: block; margin-top: 3px; color: var(--muted); font-size: 7px; font-weight: 850; text-transform: uppercase; }
+.rank-comparison span + span { border-left: 1px solid var(--line); }
 .player-cell { min-width: 0; display: flex; align-items: center; gap: 11px; }
 .player-cell img { width: 34px; height: 34px; flex: 0 0 auto; object-fit: contain; }
 .player-cell span { min-width: 0; }
@@ -123,7 +126,7 @@ h1 { margin: 0; font-size: 38px; line-height: 1.05; letter-spacing: 0; }
 .row-actions button:hover { color: var(--green); background: #e4eee8; }
 .row-actions svg { width: 15px; height: 15px; }
 .detail-row td { height: auto; padding: 0 !important; background: #f7f9f7; }
-.player-detail { padding: 0 22px 24px 88px; border-bottom: 1px solid var(--line); }
+.player-detail { padding: 0 22px 24px 156px; border-bottom: 1px solid var(--line); }
 .season-components { padding-top: 15px; }
 .detail-label { display: block; margin: 0 0 9px; color: var(--muted); font-size: 9px; font-weight: 850; text-transform: uppercase; }
 .stat-grid { display: grid; grid-template-columns: repeat(6, minmax(84px, 1fr)); border: 1px solid var(--line); background: #fff; }
