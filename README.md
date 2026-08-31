@@ -54,6 +54,11 @@ format. It applies explicit opportunity-cost discounts to QB, TE, and K. Raw
 model season points and points per game remain separate sortable views. This is
 a model-based draft heuristic, not market ADP.
 
+Because the current board is built from the completed 2024 validation season,
+it also reports and sorts by actual fantasy points at the season and game level.
+Actual outcomes are evaluation context only and do not enter the draft-value
+calculation.
+
 The public GitHub Pages site contains only this draft-board interface. Pushes to
 `main` run the test suite and deploy the static `web/` directory through
 `.github/workflows/pages.yml`.

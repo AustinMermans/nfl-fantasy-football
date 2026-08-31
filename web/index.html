@@ -6,10 +6,10 @@
   <meta name="color-scheme" content="light">
   <title>NFL Fantasy Draft Board</title>
   <link rel="preconnect" href="https://a.espncdn.com">
-  <link rel="stylesheet" href="styles.css?v=20260830-draft-order">
+  <link rel="stylesheet" href="styles.css?v=20260831-actual-points">
   <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
-  <script src="projections.js?v=20260830-draft-order"></script>
-  <script src="app.js?v=20260830-draft-order" defer></script>
+  <script src="projections.js?v=20260831-actual-points"></script>
+  <script src="app.js?v=20260831-actual-points" defer></script>
 </head>
 <body>
   <div id="error" class="fatal" hidden></div>
@@ -79,6 +79,7 @@
               <option value="draft">Draft order</option>
               <option value="points">Model season points</option>
               <option value="weekly">Model points per game</option>
+              <option value="actual">Actual points scored</option>
               <option value="position">Position rank</option>
               <option value="lift">Model lift</option>
               <option value="name">Player name</option>
@@ -97,6 +98,7 @@
               <th>Pos</th>
               <th>Team</th>
               <th class="number-cell">Projection</th>
+              <th class="number-cell">Actual</th>
               <th class="number-cell">Per game</th>
               <th class="number-cell" title="Value above a replacement-level player, adjusted for positional opportunity cost">Draft value</th>
               <th>Status</th>

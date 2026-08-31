@@ -99,12 +99,16 @@ def build_player_rankings(
     )
     totals = fantasy.groupby("player_id", as_index=False).agg(
         projected_points=("predicted_fantasy_points", "sum"),
+        actual_points=("actual_fantasy_points", "sum"),
         baseline_points=("baseline_fantasy_points", "sum"),
         projected_games=("game_id", "nunique"),
     )
     totals = totals.merge(latest, on="player_id", validate="one_to_one")
     totals["points_per_game"] = (
         totals["projected_points"] / totals["projected_games"]
+    )
+    totals["actual_points_per_game"] = (
+        totals["actual_points"] / totals["projected_games"]
     )
     totals["model_lift"] = totals["projected_points"] - totals["baseline_points"]
 
@@ -139,6 +143,9 @@ def build_player_rankings(
         ascending=[False, False, True],
     ).reset_index(drop=True)
     totals["overall_rank"] = totals.index + 1
+    totals["actual_rank"] = (
+        totals["actual_points"].rank(method="first", ascending=False).astype(int)
+    )
     totals["position_rank"] = (
         totals.groupby("position")["projected_points"]
         .rank(method="first", ascending=False)
@@ -194,6 +201,7 @@ def build_player_rankings(
                     "opponent": game.opponent_team,
                     "venue": _venue(game.game_id, game.team),
                     "projectedPoints": _number(game.predicted_fantasy_points, 2),
+                    "actualPoints": _number(game.actual_fantasy_points, 2),
                     "baselinePoints": _number(game.baseline_fantasy_points, 2),
                     "stats": game_stats,
                 }
@@ -207,10 +215,13 @@ def build_player_rankings(
                 "rank": int(row.overall_rank),
                 "positionRank": int(row.position_rank),
                 "projectedPoints": round(float(row.projected_points), 1),
+                "actualPoints": round(float(row.actual_points), 1),
                 "pointsPerGame": round(float(row.points_per_game), 2),
+                "actualPointsPerGame": round(float(row.actual_points_per_game), 2),
                 "projectedGames": int(row.projected_games),
                 "modelLift": round(float(row.model_lift), 1),
                 "draftRank": draft_rank[row.player_id],
+                "actualRank": int(row.actual_rank),
                 "draftValue": _number(row.draft_value),
                 "valueOverReplacement": _number(row.value_over_replacement),
                 "replacementPoints": _number(row.replacement_points),

@@ -50,6 +50,7 @@
       draft: (a, b) => a.draftRank - b.draftRank,
       points: (a, b) => b.projectedPoints - a.projectedPoints || a.rank - b.rank,
       weekly: (a, b) => b.pointsPerGame - a.pointsPerGame || a.rank - b.rank,
+      actual: (a, b) => a.actualRank - b.actualRank,
       position: (a, b) => a.position.localeCompare(b.position) || a.positionRank - b.positionRank,
       lift: (a, b) => b.modelLift - a.modelLift || a.rank - b.rank,
       name: (a, b) => a.name.localeCompare(b.name),
@@ -98,6 +99,7 @@
         <td><strong>${game.week}</strong></td>
         <td><span class="matchup-venue">${game.venue}</span> ${escapeHtml(game.opponent)}</td>
         <td class="number-cell weekly-projection">${game.projectedPoints.toFixed(2)}</td>
+        <td class="number-cell actual-result">${game.actualPoints.toFixed(2)}</td>
         ${columns.map(([, key]) => `<td class="number-cell">${gameStat(game, key).toFixed(1)}</td>`).join("")}
       </tr>
     `).join("");
@@ -105,11 +107,11 @@
       <div class="weekly-wrap">
         <div class="detail-heading">
           <div><strong>Game-by-game projections</strong><span>${data.projectionSeason} out-of-sample validation</span></div>
-          <small>Opponent-aware pregame model output</small>
+          <small>Actual reflects the completed ${data.projectionSeason} validation result</small>
         </div>
         <div class="weekly-scroll">
           <table class="weekly-table">
-            <thead><tr><th>Week</th><th>Matchup</th><th class="number-cell">Projected</th>${headers}</tr></thead>
+            <thead><tr><th>Week</th><th>Matchup</th><th class="number-cell">Projected</th><th class="number-cell">Actual</th>${headers}</tr></thead>
             <tbody>${rows}</tbody>
           </table>
         </div>
@@ -139,7 +141,7 @@
     const status = statusFor(player.id);
     const expanded = state.expanded === player.id;
     const rowClass = status === "available" ? "" : ` ${status}`;
-    const displayedRank = state.sort === "draft" ? player.draftRank : player.rank;
+    const displayedRank = state.sort === "draft" ? player.draftRank : state.sort === "actual" ? player.actualRank : player.rank;
     return `
       <tr class="player-row${rowClass}" data-id="${escapeHtml(player.id)}">
         <td class="rank-cell"><strong>${displayedRank}</strong><small>${player.position}${player.positionRank}</small></td>
@@ -152,6 +154,7 @@
         <td><span class="${positionClass(player.position)}">${escapeHtml(player.position)}</span></td>
         <td class="team-cell">${escapeHtml(player.team)}</td>
         <td class="number-cell projection"><strong>${player.projectedPoints.toFixed(1)}</strong></td>
+        <td class="number-cell actual-total">${player.actualPoints.toFixed(1)}</td>
         <td class="number-cell">${player.pointsPerGame.toFixed(2)}</td>
         <td class="number-cell draft-value">${player.draftValue > 0 ? "+" : ""}${player.draftValue.toFixed(1)}</td>
         <td>${statusMarkup(player, status)}</td>
@@ -165,7 +168,7 @@
       </tr>
       ${expanded ? `
         <tr class="detail-row">
-          <td colspan="9">${playerDetail(player)}</td>
+          <td colspan="10">${playerDetail(player)}</td>
         </tr>
       ` : ""}
     `;

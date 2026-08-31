@@ -86,9 +86,9 @@ h1 { margin: 0; font-size: 38px; line-height: 1.05; letter-spacing: 0; }
 .rankings-table th:nth-child(2) { width: 25%; }
 .rankings-table th:nth-child(3) { width: 66px; }
 .rankings-table th:nth-child(4) { width: 68px; }
-.rankings-table th:nth-child(5), .rankings-table th:nth-child(6), .rankings-table th:nth-child(7) { width: 108px; }
-.rankings-table th:nth-child(8) { width: 100px; }
-.rankings-table th:nth-child(9) { width: 124px; }
+.rankings-table th:nth-child(5), .rankings-table th:nth-child(6), .rankings-table th:nth-child(7), .rankings-table th:nth-child(8) { width: 96px; }
+.rankings-table th:nth-child(9) { width: 100px; }
+.rankings-table th:nth-child(10) { width: 124px; }
 .player-row { cursor: pointer; }
 .player-row:hover { background: #fafcfb; }
 .player-row.mine { background: var(--green-soft); }
@@ -109,6 +109,7 @@ h1 { margin: 0; font-size: 38px; line-height: 1.05; letter-spacing: 0; }
 .team-cell { color: var(--muted); font-weight: 800; }
 .number-cell { text-align: right !important; font-variant-numeric: tabular-nums; }
 .projection strong { color: var(--green); font-size: 16px; }
+.actual-total { color: #4d5952; font-weight: 800; }
 .positive { color: var(--green); }
 .negative { color: var(--red); }
 .draft-value { color: #4f5c55; font-weight: 800; }
