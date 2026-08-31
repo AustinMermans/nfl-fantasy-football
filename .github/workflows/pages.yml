@@ -24,6 +24,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Python
+        if: github.event_name != 'push'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -52,9 +53,11 @@ jobs:
           cache: pip
 
       - name: Install project
-        run: pip install .
+        if: github.event_name != 'push'
+        run: pip install -e .
 
       - name: Refresh current preseason forecasts
+        if: github.event_name != 'push'
         run: nfl-fantasy preseason-forecast --season 2026 --refresh
 
       - name: Configure GitHub Pages
