@@ -3,7 +3,7 @@
 
   const data = window.NFL_DRAFT_DATA;
   const storageKey = "nfl-fantasy-draft-board-v1";
-  const state = { position: "ALL", query: "", sort: "points", picks: [], expanded: null };
+  const state = { position: "ALL", query: "", sort: "draft", picks: [], expanded: null };
   const $ = (id) => document.getElementById(id);
   const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (char) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;",
@@ -47,6 +47,7 @@
       return positionMatch && textMatch;
     });
     const sorters = {
+      draft: (a, b) => a.draftRank - b.draftRank,
       points: (a, b) => b.projectedPoints - a.projectedPoints || a.rank - b.rank,
       weekly: (a, b) => b.pointsPerGame - a.pointsPerGame || a.rank - b.rank,
       position: (a, b) => a.position.localeCompare(b.position) || a.positionRank - b.positionRank,
@@ -97,7 +98,6 @@
         <td><strong>${game.week}</strong></td>
         <td><span class="matchup-venue">${game.venue}</span> ${escapeHtml(game.opponent)}</td>
         <td class="number-cell weekly-projection">${game.projectedPoints.toFixed(2)}</td>
-        <td class="number-cell actual-result">${game.actualPoints.toFixed(2)}</td>
         ${columns.map(([, key]) => `<td class="number-cell">${gameStat(game, key).toFixed(1)}</td>`).join("")}
       </tr>
     `).join("");
@@ -105,11 +105,11 @@
       <div class="weekly-wrap">
         <div class="detail-heading">
           <div><strong>Game-by-game projections</strong><span>${data.projectionSeason} out-of-sample validation</span></div>
-          <small>Actual is shown only because this is a completed validation season.</small>
+          <small>Opponent-aware pregame model output</small>
         </div>
         <div class="weekly-scroll">
           <table class="weekly-table">
-            <thead><tr><th>Week</th><th>Matchup</th><th class="number-cell">Projected</th><th class="number-cell">Actual</th>${headers}</tr></thead>
+            <thead><tr><th>Week</th><th>Matchup</th><th class="number-cell">Projected</th>${headers}</tr></thead>
             <tbody>${rows}</tbody>
           </table>
         </div>
@@ -139,10 +139,10 @@
     const status = statusFor(player.id);
     const expanded = state.expanded === player.id;
     const rowClass = status === "available" ? "" : ` ${status}`;
-    const liftClass = player.modelLift >= 0 ? "positive" : "negative";
+    const displayedRank = state.sort === "draft" ? player.draftRank : player.rank;
     return `
       <tr class="player-row${rowClass}" data-id="${escapeHtml(player.id)}">
-        <td class="rank-cell"><strong>${player.rank}</strong><small>${player.position}${player.positionRank}</small></td>
+        <td class="rank-cell"><strong>${displayedRank}</strong><small>${player.position}${player.positionRank}</small></td>
         <td>
           <div class="player-cell">
             <img src="${teamLogo(player.team)}" alt="" onerror="this.hidden=true">
@@ -153,7 +153,7 @@
         <td class="team-cell">${escapeHtml(player.team)}</td>
         <td class="number-cell projection"><strong>${player.projectedPoints.toFixed(1)}</strong></td>
         <td class="number-cell">${player.pointsPerGame.toFixed(2)}</td>
-        <td class="number-cell ${liftClass}">${player.modelLift >= 0 ? "+" : ""}${player.modelLift.toFixed(1)}</td>
+        <td class="number-cell draft-value">${player.draftValue > 0 ? "+" : ""}${player.draftValue.toFixed(1)}</td>
         <td>${statusMarkup(player, status)}</td>
         <td class="actions-cell">
           <div class="row-actions">
@@ -248,6 +248,7 @@
     $("seasonLabel").textContent = `${data.projectionSeason} validation season`;
     $("modelStatus").textContent = `${data.scoring} · development model`;
     $("methodLabel").textContent = `${data.scope}. Season sum of game-level forecasts; not a live ${new Date().getFullYear()} preseason ranking.`;
+    $("methodLabel").textContent += ` Draft order: ${data.draftFormat}.`;
     $("footerScope").textContent = `${data.projectionSeason} · ${data.scoring} · ${data.players.length} fantasy-relevant players`;
     const generated = new Date(data.generatedAt);
     $("updatedLabel").textContent = `Generated ${generated.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;

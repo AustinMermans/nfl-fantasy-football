@@ -78,6 +78,13 @@ and position-relevant component forecasts. The board deliberately labels the
 season and development status to avoid presenting retrospective validation
 output as a live forecast.
 
+Draft order uses value over position-specific replacement under an assumed
+12-team, 1QB/2RB/2WR/1TE/1 FLEX lineup. Replacement ranks are QB12, RB30, WR36,
+TE12, and K12. Positive replacement value is multiplied by explicit positional
+opportunity-cost weights (QB `0.55`, RB `1.0`, WR `1.0`, TE `0.8`, K `0.05`).
+This heuristic prevents raw quarterback and kicker scoring from dominating the
+board but is not observed ADP or a full sequential-draft optimizer.
+
 ## Factor screen
 
 Each context candidate was compared with 100 random controls and seven

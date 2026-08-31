@@ -111,6 +111,7 @@ h1 { margin: 0; font-size: 38px; line-height: 1.05; letter-spacing: 0; }
 .projection strong { color: var(--green); font-size: 16px; }
 .positive { color: var(--green); }
 .negative { color: var(--red); }
+.draft-value { color: #4f5c55; font-weight: 800; }
 .status-pill { display: inline-block; padding: 5px 7px; border-radius: 4px; font-size: 9px; font-weight: 850; text-transform: uppercase; }
 .status-pill.available { color: #516059; background: #edf0ee; }
 .status-pill.mine { color: var(--green); background: #d7eadd; }

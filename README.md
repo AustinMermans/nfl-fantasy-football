@@ -48,6 +48,12 @@ component projections, and stores Mine/Taken actions and undo history in the
 local browser. It is a model-inspection view until a current-season production
 forecast and final league roster settings are available.
 
+The default draft-order sort converts projected points into value over a
+position-specific replacement player for a 12-team, 1QB/2RB/2WR/1TE/1 FLEX
+format. It applies explicit opportunity-cost discounts to QB, TE, and K. Raw
+model season points and points per game remain separate sortable views. This is
+a model-based draft heuristic, not market ADP.
+
 The public GitHub Pages site contains only this draft-board interface. Pushes to
 `main` run the test suite and deploy the static `web/` directory through
 `.github/workflows/pages.yml`.

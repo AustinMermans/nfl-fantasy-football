@@ -62,6 +62,9 @@ POSITION_DISPLAY_FIELDS = {
     ),
 }
 
+DEFAULT_REPLACEMENT_RANKS = {"QB": 12, "RB": 30, "WR": 36, "TE": 12, "K": 12}
+DEFAULT_DRAFT_WEIGHTS = {"QB": 0.55, "RB": 1.0, "WR": 1.0, "TE": 0.8, "K": 0.05}
+
 
 def _number(value: object, digits: int = 1) -> float:
     return round(float(0.0 if pd.isna(value) else value), digits)
@@ -77,6 +80,8 @@ def build_player_rankings(
     component_predictions: pd.DataFrame,
     *,
     season: int | None = None,
+    replacement_ranks: dict[str, int] | None = None,
+    draft_weights: dict[str, float] | None = None,
 ) -> list[dict[str, object]]:
     """Aggregate one season of out-of-sample game forecasts into player rankings."""
     selected_season = int(season or fantasy_predictions["season"].max())
@@ -139,6 +144,36 @@ def build_player_rankings(
         .rank(method="first", ascending=False)
         .astype(int)
     )
+    replacement_config = replacement_ranks or DEFAULT_REPLACEMENT_RANKS
+    weight_config = draft_weights or DEFAULT_DRAFT_WEIGHTS
+    replacement_points = {}
+    for position, position_frame in totals.groupby("position"):
+        ordered = position_frame.sort_values("projected_points", ascending=False)
+        replacement_rank = min(replacement_config.get(position, len(ordered)), len(ordered))
+        replacement_points[position] = float(
+            ordered.iloc[replacement_rank - 1]["projected_points"]
+        )
+    totals["replacement_points"] = totals["position"].map(replacement_points)
+    totals["value_over_replacement"] = (
+        totals["projected_points"] - totals["replacement_points"]
+    )
+    totals["draft_value"] = totals.apply(
+        lambda player: (
+            player["value_over_replacement"]
+            * weight_config.get(player["position"], 1.0)
+            if player["value_over_replacement"] > 0
+            else player["value_over_replacement"]
+        ),
+        axis=1,
+    )
+    draft_order = totals.sort_values(
+        ["draft_value", "projected_points", "player_name"],
+        ascending=[False, False, True],
+    )
+    draft_rank = {
+        player_id: rank
+        for rank, player_id in enumerate(draft_order["player_id"], start=1)
+    }
 
     rows: list[dict[str, object]] = []
     for row in totals.itertuples(index=False):
@@ -159,7 +194,6 @@ def build_player_rankings(
                     "opponent": game.opponent_team,
                     "venue": _venue(game.game_id, game.team),
                     "projectedPoints": _number(game.predicted_fantasy_points, 2),
-                    "actualPoints": _number(game.actual_fantasy_points, 2),
                     "baselinePoints": _number(game.baseline_fantasy_points, 2),
                     "stats": game_stats,
                 }
@@ -176,6 +210,10 @@ def build_player_rankings(
                 "pointsPerGame": round(float(row.points_per_game), 2),
                 "projectedGames": int(row.projected_games),
                 "modelLift": round(float(row.model_lift), 1),
+                "draftRank": draft_rank[row.player_id],
+                "draftValue": _number(row.draft_value),
+                "valueOverReplacement": _number(row.value_over_replacement),
+                "replacementPoints": _number(row.replacement_points),
                 "stats": stats,
                 "games": game_rows,
             }
@@ -205,6 +243,8 @@ def export_draft_board(
         "projectionSeason": selected_season,
         "scoring": "Traditional non-PPR",
         "scope": "Out-of-sample development ranking",
+        "draftFormat": "12-team · 1 QB · 2 RB · 2 WR · 1 TE · 1 FLEX",
+        "draftMethod": "Value over replacement with one-QB, tight-end, and kicker opportunity-cost adjustments",
         "players": build_player_rankings(
             fantasy, component_predictions, season=selected_season
         ),
