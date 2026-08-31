@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>NFL Fantasy Draft Board</title>
+  <link rel="preconnect" href="https://a.espncdn.com">
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
+  <script src="projections.js"></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div id="error" class="fatal" hidden></div>
+  <div id="app" class="app-shell" hidden>
+    <header class="topbar">
+      <a class="brand" href="#board" aria-label="NFL fantasy draft board">
+        <span class="brand-mark">NFL</span>
+        <span>
+          <strong>Fantasy Draft Board</strong>
+          <small id="seasonLabel"></small>
+        </span>
+      </a>
+      <div class="header-status">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span id="modelStatus"></span>
+      </div>
+    </header>
+
+    <main>
+      <section class="board-heading">
+        <div>
+          <p class="eyebrow">Model rankings</p>
+          <h1>Player projections</h1>
+          <p id="methodLabel" class="method-label"></p>
+        </div>
+        <div class="heading-actions">
+          <button id="undoButton" class="button secondary" type="button" disabled title="Undo last draft action">
+            <i data-lucide="undo-2" aria-hidden="true"></i>
+            <span>Undo</span>
+          </button>
+          <button id="resetButton" class="icon-button" type="button" title="Reset draft board" aria-label="Reset draft board">
+            <i data-lucide="rotate-ccw" aria-hidden="true"></i>
+          </button>
+        </div>
+      </section>
+
+      <section class="summary-strip" aria-label="Draft summary">
+        <div class="best-available">
+          <span>Best available</span>
+          <strong id="bestName">-</strong>
+          <small id="bestMeta">-</small>
+        </div>
+        <div><span>Projected</span><strong id="bestPoints">-</strong><small>season points</small></div>
+        <div><span>Available</span><strong id="availableCount">-</strong><small>players</small></div>
+        <div><span>My roster</span><strong id="mineCount">0</strong><small>players</small></div>
+        <div><span>Drafted</span><strong id="takenCount">0</strong><small>by others</small></div>
+      </section>
+
+      <section class="toolbar" aria-label="Projection filters">
+        <div id="positionFilters" class="segmented-control" role="group" aria-label="Position">
+          <button class="active" type="button" data-position="ALL">All</button>
+          <button type="button" data-position="QB">QB</button>
+          <button type="button" data-position="RB">RB</button>
+          <button type="button" data-position="WR">WR</button>
+          <button type="button" data-position="TE">TE</button>
+          <button type="button" data-position="K">K</button>
+        </div>
+        <div class="toolbar-fields">
+          <label class="search-field">
+            <i data-lucide="search" aria-hidden="true"></i>
+            <span class="sr-only">Search players</span>
+            <input id="searchInput" type="search" placeholder="Search player or team" autocomplete="off">
+          </label>
+          <label class="sort-field">
+            <span class="sr-only">Sort projections</span>
+            <select id="sortSelect">
+              <option value="points">Season points</option>
+              <option value="weekly">Points per game</option>
+              <option value="position">Position rank</option>
+              <option value="lift">Model lift</option>
+              <option value="name">Player name</option>
+            </select>
+            <i data-lucide="chevron-down" aria-hidden="true"></i>
+          </label>
+        </div>
+      </section>
+
+      <section class="table-shell">
+        <table class="rankings-table">
+          <thead>
+            <tr>
+              <th class="rank-cell">Rank</th>
+              <th>Player</th>
+              <th>Pos</th>
+              <th>Team</th>
+              <th class="number-cell">Projection</th>
+              <th class="number-cell">Per game</th>
+              <th class="number-cell">vs. baseline</th>
+              <th>Status</th>
+              <th><span class="sr-only">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody id="rankingsBody"></tbody>
+        </table>
+        <div id="emptyState" class="empty-state" hidden>No players match this view.</div>
+      </section>
+    </main>
+
+    <footer>
+      <span id="footerScope"></span>
+      <span id="updatedLabel"></span>
+    </footer>
+  </div>
+</body>
+</html>

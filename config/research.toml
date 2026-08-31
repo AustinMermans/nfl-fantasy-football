@@ -1,0 +1,19 @@
+[data]
+first_season = 2012
+development_end_season = 2024
+locked_test_season = 2025
+season_type = "REG"
+
+[validation]
+first_validation_season = 2018
+selection_season = 2024
+primary_metric = "rmse"
+
+[model]
+random_seed = 20260830
+min_player_games = 2
+positions = ["QB", "RB", "FB", "WR", "TE", "K"]
+
+[research]
+random_control_repetitions = 100
+familywise_alpha = 0.05
