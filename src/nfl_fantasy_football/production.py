@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.error import HTTPError
 
 import numpy as np
 import pandas as pd
@@ -12,6 +13,7 @@ from .evaluation import TARGET_POSITIONS
 from .fantasy import DEPLOYMENT_SELECTION, KEYS, _selected_long
 from .features import build_features, feature_sets
 from .model import RecentMeanRegressor, build_estimator
+from .rookies import rookie_prior_table
 from .scoring import score_components, scoring_fields
 
 
@@ -24,9 +26,13 @@ CURRENT_INPUT_URLS = {
         "https://github.com/nflverse/nflverse-data/releases/download/depth_charts/"
         "depth_charts_{season}.parquet"
     ),
+    "injury": (
+        "https://github.com/nflverse/nflverse-data/releases/download/injuries/"
+        "injuries_{season}.parquet"
+    ),
 }
 
-DEPTH_LIMITS = {"QB": 2, "RB": 4, "FB": 2, "WR": 6, "TE": 3, "K": 1}
+DEPTH_LIMITS = {"QB": 10, "RB": 20, "FB": 10, "WR": 20, "TE": 10, "K": 5}
 STARTING_DEPTH = {"QB": 1, "RB": 2, "FB": 1, "WR": 3, "TE": 1, "K": 1}
 
 
@@ -39,14 +45,19 @@ def refresh_production_inputs(
     """Download completed history plus the current roster and depth chart."""
     download_nflverse(list(range(first_season, season)), refresh=False)
     for name, template in CURRENT_INPUT_URLS.items():
-        destination_name = (
-            f"roster_weekly_{season}.parquet"
-            if name == "roster"
-            else f"depth_charts_{season}.parquet"
-        )
+        destination_name = {
+            "roster": f"roster_weekly_{season}.parquet",
+            "depth": f"depth_charts_{season}.parquet",
+            "injury": f"injuries_{season}.parquet",
+        }[name]
         destination = RAW_DIR / destination_name
         if refresh_current or not destination.exists():
-            _download(template.format(season=season), destination)
+            try:
+                _download(template.format(season=season), destination)
+            except HTTPError as error:
+                if name != "injury" or error.code != 404:
+                    raise
+                destination.unlink(missing_ok=True)
     if refresh_current:
         _download(
             "https://github.com/nflverse/nfldata/raw/master/data/games.csv",
@@ -162,15 +173,43 @@ def current_preseason_games(season: int) -> tuple[pd.DataFrame, str]:
         future[column] = 0.0
     for column in STAT_COLUMNS:
         future[column] = 0.0
-    for column in (
+    injury_columns = (
         "report_primary_injury",
         "report_secondary_injury",
         "report_status",
         "practice_primary_injury",
         "practice_secondary_injury",
         "practice_status",
-    ):
-        future[column] = None
+    )
+    injury_path = RAW_DIR / f"injuries_{season}.parquet"
+    future["current_injury_feed"] = False
+    if injury_path.exists():
+        injuries = pd.read_parquet(injury_path)
+
+        def first_non_null(values: pd.Series):
+            non_null = values.dropna()
+            return non_null.iloc[-1] if not non_null.empty else None
+
+        injury_week = (
+            injuries[injuries["game_type"].eq("REG")]
+            .groupby(["season", "week", "team", "gsis_id"], as_index=False)[
+                list(injury_columns)
+            ]
+            .agg(first_non_null)
+            .rename(columns={"gsis_id": "player_id"})
+        )
+        future = future.merge(
+            injury_week,
+            on=["season", "week", "team", "player_id"],
+            how="left",
+            validate="many_to_one",
+        )
+        future["current_injury_feed"] = bool(
+            injury_week[list(injury_columns)].notna().any().any()
+        )
+    else:
+        for column in injury_columns:
+            future[column] = None
     future["gameday"] = pd.to_datetime(future["gameday"], errors="coerce")
     future["birth_date"] = pd.to_datetime(future["birth_date"], errors="coerce")
     future["draft_year"] = pd.to_numeric(future["draft_year"], errors="coerce")
@@ -266,9 +305,11 @@ def fantasy_forecasts(
 
 
 def apply_current_role_adjustments(
-    components: pd.DataFrame, future_features: pd.DataFrame
+    components: pd.DataFrame,
+    future_features: pd.DataFrame,
+    history: pd.DataFrame,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Scale zero-history players to the experienced median for their depth role."""
+    """Apply empirical rookie priors and cap stale-history reserve forecasts."""
     preliminary = fantasy_forecasts(components, future_features)
     totals = preliminary.groupby(
         ["player_id", "player_name", "position", "team"], as_index=False
@@ -276,8 +317,22 @@ def apply_current_role_adjustments(
     roles = (
         future_features.sort_values(["player_id", "week"])
         .groupby("player_id", as_index=False)
-        .first()[["player_id", "depth_rank", "player_games_prior"]]
+        .first()[
+            [
+                "player_id",
+                "depth_rank",
+                "player_games_prior",
+                "draft_pick",
+                "draft_year",
+                "years_exp",
+                "season",
+            ]
+        ]
     )
+    roles["is_rookie"] = roles["draft_year"].eq(roles["season"]) | roles[
+        "years_exp"
+    ].eq(0)
+    rookie_priors = rookie_prior_table(history, totals, roles)
     totals = totals.merge(roles, on="player_id", validate="one_to_one")
     experienced = totals[totals["player_games_prior"].gt(0)]
     role_prior = experienced.groupby(
@@ -290,11 +345,11 @@ def apply_current_role_adjustments(
     ].median()
     adjustments = totals.merge(
         role_prior, on=["position", "depth_rank"], how="left"
-    )
+    ).merge(rookie_priors, on="player_id", how="left")
     adjustments["role_prior_points"] = adjustments["role_prior_points"].fillna(
         adjustments["position"].map(position_prior)
     )
-    rookie = adjustments["player_games_prior"].eq(0)
+    rookie = adjustments["is_rookie"]
     reserve = adjustments.apply(
         lambda row: row["depth_rank"] > STARTING_DEPTH[row["position"]], axis=1
     )
@@ -302,11 +357,14 @@ def apply_current_role_adjustments(
         adjustments["role_prior_points"]
     )
     adjustments["adjusted_points"] = adjustments["predicted_fantasy_points"]
-    adjustments.loc[rookie | (reserve & above_role), "adjusted_points"] = adjustments.loc[
-        rookie | (reserve & above_role), "role_prior_points"
+    adjustments.loc[rookie, "adjusted_points"] = adjustments.loc[
+        rookie, "rookie_prior_mean"
+    ].fillna(adjustments.loc[rookie, "role_prior_points"])
+    adjustments.loc[~rookie & reserve & above_role, "adjusted_points"] = adjustments.loc[
+        ~rookie & reserve & above_role, "role_prior_points"
     ]
     adjustments["adjustment_reason"] = "none"
-    adjustments.loc[rookie, "adjustment_reason"] = "zero-history role prior"
+    adjustments.loc[rookie, "adjustment_reason"] = "empirical rookie prior"
     adjustments.loc[~rookie & reserve & above_role, "adjustment_reason"] = (
         "reserve-role cap"
     )
@@ -331,6 +389,12 @@ def apply_current_role_adjustments(
             "adjusted_points",
             "role_scale",
             "adjustment_reason",
+            "rookie_p10",
+            "rookie_p50",
+            "rookie_p90",
+            "rookie_cohort_effective_n",
+            "rookie_draft_pick",
+            "rookie_role_center",
         ]
     ].sort_values(["position", "depth_rank", "player_name"])
     return adjusted, audit
@@ -349,12 +413,20 @@ def build_preseason_forecasts(
     future_features = preseason_feature_snapshots(history, future)
     components = component_forecasts(history_features, future_features)
     components, role_audit = apply_current_role_adjustments(
-        components, future_features
+        components, future_features, history
     )
     adjustment_reason = role_audit.set_index("player_id")["adjustment_reason"]
     future_features["role_adjustment"] = future_features["player_id"].map(
         adjustment_reason
     ).fillna("none")
+    for column in (
+        "rookie_p10",
+        "rookie_p50",
+        "rookie_p90",
+        "rookie_cohort_effective_n",
+    ):
+        values = role_audit.set_index("player_id")[column]
+        future_features[column] = future_features["player_id"].map(values)
     fantasy = fantasy_forecasts(components, future_features)
     role_audit.to_csv(
         PROJECT_ROOT / "results" / "current_role_adjustments.csv", index=False

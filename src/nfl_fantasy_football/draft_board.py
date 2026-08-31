@@ -9,16 +9,22 @@ import pandas as pd
 from .config import PROJECT_ROOT
 from .draft_strategy import DEFAULT_ROSTER_SLOTS, format_draft_metrics
 from .fantasy import DEPLOYMENT_SELECTION, _selected_long
+from .scoring import load_scoring
 
 
 DISPLAY_FIELDS = (
+    "receptions",
     "passing_yards",
     "passing_tds",
     "passing_interceptions",
+    "passing_2pt_conversions",
     "rushing_yards",
     "rushing_tds",
+    "rushing_2pt_conversions",
     "receiving_yards",
     "receiving_tds",
+    "receiving_2pt_conversions",
+    "special_teams_tds",
     "fumbles_lost_total",
     "fg_made_0_19",
     "fg_made_20_29",
@@ -34,24 +40,36 @@ POSITION_DISPLAY_FIELDS = {
         "passing_yards",
         "passing_tds",
         "passing_interceptions",
+        "passing_2pt_conversions",
         "rushing_yards",
         "rushing_tds",
+        "rushing_2pt_conversions",
     ),
     "RB": (
         "rushing_yards",
         "rushing_tds",
+        "receptions",
         "receiving_yards",
         "receiving_tds",
+        "receiving_2pt_conversions",
         "fumbles_lost_total",
     ),
     "WR": (
         "receiving_yards",
         "receiving_tds",
+        "receptions",
+        "receiving_2pt_conversions",
         "rushing_yards",
         "rushing_tds",
         "fumbles_lost_total",
     ),
-    "TE": ("receiving_yards", "receiving_tds", "fumbles_lost_total"),
+    "TE": (
+        "receptions",
+        "receiving_yards",
+        "receiving_tds",
+        "receiving_2pt_conversions",
+        "fumbles_lost_total",
+    ),
     "K": (
         "fg_made_0_19",
         "fg_made_20_29",
@@ -65,6 +83,10 @@ POSITION_DISPLAY_FIELDS = {
 
 def _number(value: object, digits: int = 1) -> float:
     return round(float(0.0 if pd.isna(value) else value), digits)
+
+
+def _text(value: object) -> str:
+    return "" if pd.isna(value) else str(value)
 
 
 def _venue(game_id: str, team: str) -> str:
@@ -289,17 +311,47 @@ def export_preseason_board(
         future_features.sort_values(["player_id", "week"])
         .groupby("player_id", as_index=False)
         .first()[
-            ["player_id", "depth_rank", "depth_slot", "pos_name", "role_adjustment"]
+            [
+                "player_id",
+                "depth_rank",
+                "depth_slot",
+                "pos_name",
+                "role_adjustment",
+                "rookie_p10",
+                "rookie_p50",
+                "rookie_p90",
+                "rookie_cohort_effective_n",
+                "current_injury_feed",
+                "report_primary_injury",
+                "report_status",
+                "practice_status",
+            ]
         ]
         .set_index("player_id")
         .to_dict("index")
     )
     for player in players:
         role = depth.get(player["id"], {})
-        player["depthRank"] = int(role.get("depth_rank", 0) or 0)
-        player["depthSlot"] = int(role.get("depth_slot", 0) or 0)
-        player["depthRole"] = str(role.get("pos_name", ""))
-        player["projectionNote"] = str(role.get("role_adjustment", "none"))
+        player["depthRank"] = int(_number(role.get("depth_rank"), 0))
+        player["depthSlot"] = int(_number(role.get("depth_slot"), 0))
+        player["depthRole"] = _text(role.get("pos_name"))
+        player["projectionNote"] = _text(role.get("role_adjustment")) or "none"
+        rookie_range = pd.notna(role.get("rookie_p50"))
+        player["projectionRange"] = {
+            "p10": _number(role.get("rookie_p10")) if rookie_range else player["projectedPoints"],
+            "p50": _number(role.get("rookie_p50")) if rookie_range else player["projectedPoints"],
+            "p90": _number(role.get("rookie_p90")) if rookie_range else player["projectedPoints"],
+            "source": "historical rookie analogs"
+            if pd.notna(role.get("rookie_p50"))
+            else "point forecast",
+            "effectiveSample": _number(role.get("rookie_cohort_effective_n", 0.0)),
+        }
+        player["injury"] = {
+            "bodyPart": _text(role.get("report_primary_injury")),
+            "gameStatus": _text(role.get("report_status")),
+            "practiceStatus": _text(role.get("practice_status")),
+        }
+    injury_available = bool(future_features["current_injury_feed"].any())
     payload = {
         "generatedAt": datetime.now(UTC).isoformat(),
         "dataAsOf": data_as_of,
@@ -308,6 +360,7 @@ def export_preseason_board(
         "forecastType": "preseason",
         "hasActuals": False,
         "scoring": "Traditional non-PPR",
+        "scoringWeights": load_scoring(),
         "scope": f"{season} preseason forecast",
         "draftFormat": "12-team · 1 QB · 2 RB · 2 WR · 1 TE · 1 FLEX · 1 K",
         "draftMethod": "Format-derived starter value with current roster and depth chart",
@@ -315,7 +368,14 @@ def export_preseason_board(
             "teams": 12,
             "draftSlot": 1,
             "rosterSlots": DEFAULT_ROSTER_SLOTS,
+            "benchSlots": 4,
+            "rounds": 12,
+            "objective": "expected optimal starter points",
         },
+        "injuryReportsAvailable": injury_available,
+        "injurySource": "nflverse/NFL game-status reports"
+        if injury_available
+        else "No current league game-status report published",
         "players": players,
     }
     destination_dir.mkdir(parents=True, exist_ok=True)

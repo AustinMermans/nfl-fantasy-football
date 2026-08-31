@@ -131,23 +131,20 @@ RB/WR/TE players, and each position's last selected starter defines replacement
 value. This removes the former fixed replacement ranks and positional weights.
 
 During a draft, the browser persists the Mine/Taken log and league settings,
-computes the snake turn, and projects opponent selections until the user's next
-turn. For each available candidate, it protects that player, removes the
-projected intervening selections, takes the best single surviving option at the
-next turn, and optimizes a QB/RB/WR/TE/FLEX/K starting lineup from those picks
-and the user's roster. Empty slots are filled at format-derived replacement so
-an incomplete roster does not make raw QB points dominate. Candidate ordering
-is lexicographic: two-pick projected starter value, expected availability,
-same-position next-turn gap, then format-derived replacement value. No realized
-outcome enters this recommendation.
+computes the snake turn, and runs 16 common-seed simulations of intervening
+opponent selections. Opponents sample from a roster-aware softmax over the
+format-value rank with duplicate-position, starter-need, bench-demand, and room-
+run terms. Each candidate is evaluated by expected legal starter value after
+the next turn. Empty slots are filled at format-derived replacement so an
+incomplete roster does not make raw QB points dominate. No realized outcome
+enters the recommendation.
 
-The opponent policy can follow recent room behavior, remain balanced, or impose
-an RB/WR run through round two. It is deterministic and has a one-turn horizon.
-It does not yet estimate pick-by-pick survival probabilities from historical
-ADP, simulate injuries or correlated weekly outcomes, value bench options, or
-solve the complete draft as a stochastic game. Those require point-in-time ADP
-and predictive distributions and must be evaluated in a preseason walk-forward
-draft backtest before the layer can be called optimized.
+Rookies add only empirical expected option value above replacement using their
+P10/P50/P90 analog distribution. The policy is a one-turn quantal-response
+prior, not a calibrated market-survival model. It does not solve the complete
+draft as a stochastic game. Point-in-time ADP, raw draft sequences, correlated
+player outcomes, and frozen Week-0 backtests are required before calling it an
+optimized policy.
 
 The deterministic stress test replays every snake slot for three opponent
 policies and compares next-turn lookahead, roster-aware greedy value, the fixed

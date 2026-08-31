@@ -1,0 +1,99 @@
+# Draft Decision Model
+
+## Objective and state
+
+The deployed objective is expected points from the best legal season-long
+starting lineup. It is not championship probability, weekly managed points, or
+best-ball scoring. The state contains the overall pick, snake order, available
+players, observed picks, inferred manager rosters, league size, lineup slots,
+and scoring weights.
+
+Scoring rules transform component-stat forecasts after prediction. League size
+and roster slots determine replacement levels and draft utility; they do not
+change the raw football forecast.
+
+## Player distributions
+
+Veterans currently have point forecasts. Rookies with no prior NFL games receive
+a historical analog distribution using same-position rookie seasons from
+2012-2025. Analog weights decay with distance in log draft pick. The cohort is
+combined with the current depth-role center. The UI exposes P10, P50, P90, and
+effective sample size.
+
+The range is empirical and uncalibrated. It does not yet sample coherent weekly
+stat trajectories or impose a shared team opportunity budget. The next version
+should estimate a smoothed rookie role state, update it with preseason depth,
+and resample entire historical component trajectories within that role. Draft
+utility may then use `E[max(X, replacement)]`; it should never apply an arbitrary
+rookie multiplier.
+
+## Live pick policy
+
+For each candidate `a`, the board estimates:
+
+`Q(state, a) = E[value(roster after a and the next snake turn)]`.
+
+It uses 16 common-seed Monte Carlo paths. Each intervening manager samples an
+available player from a softmax over format-value rank, unfilled starter need,
+duplicate-position cost, RB/WR bench demand, and the selected room-run scenario.
+The candidate with the largest expected two-turn legal-lineup value ranks first.
+The board also reports the fraction of baseline paths in which each player
+survives to the next turn.
+
+A final-round kicker timing prior prevents the short horizon from spending an
+early pick on a position whose replacement pool is expected to remain available.
+This is a declared fallback assumption until the opponent model is fitted to
+timestamped draft sequences.
+
+This is a transparent quantal-response prior. Its probabilities are not yet
+calibrated because the repository does not contain point-in-time historical
+draft-room logs. Market ADP belongs in this opponent-choice layer, not in the
+player-value forecast.
+
+## Expert review consensus
+
+Five independent reviews covered rookie forecasting, football roles, Bayesian
+availability/injury updating, game theory, draft-market behavior, and validation.
+Their convergent recommendations are:
+
+1. Separate player outcome value from opponent selection behavior.
+2. Represent rookie role and season output as distributions, preserving weekly
+   and same-team dependence.
+3. Treat missing injury reports as unknown and model availability, health, and
+   role separately.
+4. Infer opponent choices from timestamped ADP and raw draft sequences, then
+   update manager tendencies from observed picks.
+5. Describe the deployed policy as a Bayesian optimal response, not a Nash
+   equilibrium or proven optimal draft.
+
+## Data roadmap
+
+- Snapshot the Fantasy Football Calculator ADP API daily by scoring, league
+  size, retrieval time, and response hash.
+- Cross-check actual-draft behavior with the MyFantasyLeague ADP report.
+- Store exact sequences only from sources and leagues whose access allows it.
+- Fit a pick-level Plackett-Luce or hazard model with ADP distribution, roster
+  need, position runs, format, round, and manager effects.
+- Replace the simulated survival prior only after rolling-origin calibration.
+
+## Validation gates
+
+Use frozen Week-0 snapshots for 2018-2024 and leave 2025 unopened until all
+choices are frozen. Evaluate player distributions with CRPS, interval coverage,
+and joint energy/variogram scores. Evaluate survival with log loss, Brier score,
+ICI, slope/intercept, and false-wait/false-reach rates. Evaluate the complete
+policy with common-random-number regret versus roster-aware greedy, format VOR,
+ADP/ECR, and a nondeployable outcome oracle.
+
+Promotion requires improvement in at least five of seven development seasons,
+season-clustered uncertainty intervals, and gains above a family-wise maximum
+placebo-feature benchmark. Until those gates pass, ranges and survival values
+remain decision aids rather than calibrated probabilities.
+
+## Injuries and starters
+
+The production board joins the latest daily active roster and depth chart, so it
+does have current starter/depth information. It optionally joins current injury
+report fields: body part, game status, and practice status. If that seasonal
+asset is absent, the feed flag is false and the UI says current designations are
+unavailable. Active roster status is eligibility, not evidence of health.

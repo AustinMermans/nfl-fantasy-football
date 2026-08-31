@@ -3,7 +3,8 @@
 ## Status
 
 Development selections with a production preseason refit. Traditional non-PPR
-scoring is the working assumption. The draft board now publishes current 2026
+is the default; the board can rescore component forecasts for Standard, Half
+PPR, Full PPR, four/six-point passing touchdowns, and interception rules. The draft board now publishes current 2026
 preseason forecasts using frozen model choices refit through completed 2025
 games. The board accepts league size and draft slot, with the traditional lineup
 shown below as its default.
@@ -97,11 +98,16 @@ feature or model selection on 2025.
 The current preseason cohort uses the active Week 1 roster and the latest daily
 nflverse depth chart. Every future week is featurized independently against
 completed 2012-2025 history, preventing earlier unplayed games from entering
-later-week rolling features as zeros. Zero-history players receive the median
-forecast for experienced players at the same position and current depth rank.
+later-week rolling features as zeros. Zero-history rookies receive a historical
+position/draft-capital predictive range combined with the current depth-role center.
 Experienced reserves whose historical workload exceeds their current nonstarter
 role are capped at that same role median. The adjustment audit is written to
 `results/current_role_adjustments.csv`.
+
+This provides current starter/depth information. Current injury designations are
+joined only when the seasonal nflverse report asset exists. If it is absent,
+the published feed flag is false and missing designations mean unknown, not
+healthy. Active roster status alone is not an injury signal.
 
 The live board does not show nonexistent 2026 actuals. The retrospective
 validation artifacts remain available in the research outputs, but actual
@@ -120,13 +126,12 @@ is the unweighted point difference from the last format-derived starter; the
 former fixed QB12/RB30/WR36/TE12/K12 ranks and `0.55/1.0/1.0/0.8/0.05`
 positional multipliers have been removed.
 
-The live layer evaluates the available pool, the user's current roster, snake
-slot, picks until the next turn, and a deterministic opponent policy. Each
-candidate is evaluated with the best single option at the next turn; empty
-starter slots are scored at format-derived replacement. Ordering then considers
-expected disappearance and the points gap to the best same-position survivor.
-Explicit RB-run and WR-run scenarios expose sensitivity to positional cascades;
-an adaptive setting follows a strong recent room run.
+The live layer evaluates the available pool, inferred opponent rosters, the
+user's roster, snake slot, and picks until the next turn. Sixteen common-seed
+Monte Carlo paths sample roster-aware quantal-response opponent choices. Each
+candidate is ranked by expected legal-lineup value after the next turn. Rookie
+uncertainty contributes expected option payoff above replacement, and the UI
+reports empirical P10/P50/P90 plus simulated next-turn survival.
 
 The 2024 deterministic stress test covers all 12 snake slots. Mean realized
 starter points for next-turn lookahead versus roster-aware greedy selection are
@@ -152,19 +157,18 @@ cross-fold grouped improvement exceeds the screened subset.
   refreshes must preserve the exact report available at forecast time.
 - Snap-count and roster feeds can be revised after games; archived point-in-time
   snapshots are preferable for live-production auditability.
-- Rookie priors, coaching changes, offensive line quality, depth-chart movement,
-  and player transactions are not yet modeled explicitly.
+- Rookie forecasts are empirical analog ranges rather than calibrated role-state
+  trajectory simulations; coaching and offensive-line changes remain absent.
 - NGS and advanced charting require common-support studies. Kalshi and
   Polymarket connectors are in shadow mode but still require mapped,
   liquidity-filtered common-support studies before model admission.
 - Individual defensive statistics and team D/ST are not yet modeled.
 - Kicker single-game ranking is weak. A team-implied-points layer has a modest
   grouped improvement but fails the individual-field multiple-testing gate.
-- Component dependence and predictive distributions are not yet simulated, so
-  ceiling, floor, best-ball, and head-to-head draft objectives are not available.
-- The live draft policy has only a deterministic one-turn lookahead. Historical
-  point-in-time ADP, probabilistic player survival, bench option value, and a
-  preseason walk-forward draft backtest are not yet available. The current
+- Veteran component dependence and predictive distributions are not yet
+  simulated, so best-ball, head-to-head, and championship objectives are absent.
+- The live draft policy has a stochastic one-turn prior but lacks fitted
+  point-in-time ADP survival and a preseason walk-forward draft backtest. The current
   stress test aggregates weekly forecasts containing in-season information, so
   recommendation ranks should not be interpreted as a proven optimal policy.
 

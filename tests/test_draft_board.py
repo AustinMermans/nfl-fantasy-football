@@ -56,8 +56,10 @@ def test_player_rankings_aggregate_games_and_rank_positions():
             "stats": {
                 "rushing_yards": 0.0,
                 "rushing_tds": 0.0,
+                "receptions": 0.0,
                 "receiving_yards": 0.0,
                 "receiving_tds": 0.0,
+                "receiving_2pt_conversions": 0.0,
                 "fumbles_lost_total": 0.0,
             },
         },
@@ -73,8 +75,10 @@ def test_player_rankings_aggregate_games_and_rank_positions():
             "stats": {
                 "rushing_yards": 0.0,
                 "rushing_tds": 0.0,
+                "receptions": 0.0,
                 "receiving_yards": 0.0,
                 "receiving_tds": 0.0,
+                "receiving_2pt_conversions": 0.0,
                 "fumbles_lost_total": 0.0,
             },
         },

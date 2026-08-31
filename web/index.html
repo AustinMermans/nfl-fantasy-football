@@ -6,10 +6,10 @@
   <meta name="color-scheme" content="light">
   <title>NFL Fantasy Draft Board</title>
   <link rel="preconnect" href="https://a.espncdn.com">
-  <link rel="stylesheet" href="styles.css?v=20260831-current-forecast">
+  <link rel="stylesheet" href="styles.css?v=20260831-probability-draft">
   <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
-  <script src="projections.js?v=20260831-current-forecast"></script>
-  <script src="app.js?v=20260831-current-forecast" defer></script>
+  <script src="projections.js?v=20260831-probability-draft"></script>
+  <script src="app.js?v=20260831-probability-draft" defer></script>
 </head>
 <body>
   <div id="error" class="fatal" hidden></div>
@@ -73,14 +73,41 @@
         <label>
           <span>Recommendation policy</span>
           <select id="policySelect">
-            <option value="roster">Roster value</option>
-            <option value="lookahead">Next-turn lookahead</option>
+            <option value="lookahead">Probability lookahead</option>
+            <option value="roster">Immediate roster value</option>
           </select>
         </label>
         <div class="roster-needs">
           <span>Starter slots</span>
           <div id="rosterNeeds" class="need-chips"></div>
         </div>
+      </section>
+
+      <section class="scoring-setup" aria-label="Fantasy scoring">
+        <span class="setup-label">Scoring</span>
+        <label>
+          <span>Receptions</span>
+          <select id="receptionSelect">
+            <option value="0">Standard</option>
+            <option value="0.5">Half PPR</option>
+            <option value="1">Full PPR</option>
+          </select>
+        </label>
+        <label>
+          <span>Passing TD</span>
+          <select id="passingTdSelect">
+            <option value="4">4 points</option>
+            <option value="6">6 points</option>
+          </select>
+        </label>
+        <label>
+          <span>Interception</span>
+          <select id="interceptionSelect">
+            <option value="-2">-2 points</option>
+            <option value="-1">-1 point</option>
+          </select>
+        </label>
+        <span id="injuryStatus" class="injury-status"></span>
       </section>
 
       <section class="summary-strip" aria-label="Draft summary">
@@ -141,7 +168,7 @@
               <th class="number-cell">Projection</th>
               <th class="number-cell actual-column">Actual</th>
               <th class="number-cell">Per game</th>
-              <th class="number-cell" title="Projected-point gap to the best same-position option expected at your next turn">Next-turn gap</th>
+              <th class="number-cell" title="Estimated probability that this player remains available until your next pick">Survival</th>
               <th>Status</th>
               <th><span class="sr-only">Actions</span></th>
             </tr>

@@ -73,27 +73,30 @@ Week 1 roster, the latest daily depth chart, current schedule, and available
 game lines. Each future week is featurized independently from completed history,
 so an unplayed earlier week is never treated as a zero-stat result.
 
-Players with no NFL history receive the median model projection of experienced
-players at the same position and current depth rank. Experienced players listed
-beyond the normal starting depth are capped at that role median when their stale
-history would otherwise imply starter volume. These are explicit preseason role
-priors, retained in `results/current_role_adjustments.csv` when the command runs.
+Rookies receive an empirical predictive distribution from 2012-2025 rookie
+seasons, smoothed by position and log draft-pick distance and combined with the
+current depth role. The board publishes P10/P50/P90 and effective analog sample
+size. Experienced reserves whose stale history implies starter volume are
+capped at their current role median. The audit is retained in
+`results/current_role_adjustments.csv`.
 
 The live draft sort is a sequential recommendation rather than a fixed weighted
 list. League size and lineup slots determine replacement levels directly: base
 starters are allocated first, then FLEX demand goes to the highest projected
 remaining RB/WR/TE players. There are no hand-set QB, TE, or K discounts.
 
-At every Mine/Taken action, the board recomputes the current snake pick, the
-number of selections before the user's next turn, the user's starter
-composition, and the players likely to leave the available pool. Candidates are
-ordered by projected starter value from the current pick plus the best single
-option at the next turn, with empty slots scored at format-derived replacement.
-Ties then use expected disappearance and the same-position points gap. Controls
-support 8-16 teams, any snake slot, an adaptive
-room, a balanced room, and explicit first-two-round RB or WR runs. This is a
-deterministic one-turn lookahead using model value as the opponent policy, not
-market ADP or a multi-round stochastic draft solution.
+At every Mine/Taken action, the board recomputes the snake state and runs 16
+common-seed simulations of the intervening picks. Opponents follow a
+roster-aware quantal-response policy over format-value rank; observed room runs
+update the selected scenario. Candidate utility is the expected legal starter
+value after the next turn. Rookie uncertainty adds only expected option payoff
+above the position replacement level, rather than a manual rookie bonus.
+Controls support 8-16 teams, any snake slot, Standard/Half/Full PPR, four- or
+six-point passing touchdowns, interception scoring, and RB/WR stress scenarios.
+
+This is a low-confidence Bayesian response model, not a fitted ADP-survival
+model or a Nash-equilibrium claim. The next production step is daily timestamped
+ADP snapshots and rolling-origin calibration against raw draft sequences.
 
 `draft-policy-stress-test` replays every snake slot against balanced, RB-run,
 and WR-run opponent policies and reports projected and realized starter points.
@@ -102,10 +105,9 @@ does not consistently beat a simpler roster-aware greedy policy: it wins the RB
 run and trails slightly in balanced and WR-run rooms. The report is written to
 `results/draft_policy_stress_test.csv`.
 
-Because the stronger comparator wins two of the three current stress cases, the
-published board defaults to **Roster value**. **Next-turn lookahead** remains an
-explicit policy option for positional-run sensitivity rather than being treated
-as universally superior.
+Because the old lookahead failed to dominate roster-aware greedy, the new
+probability lookahead is presented as an unvalidated decision aid and can be
+switched to immediate roster value.
 
 This is deliberately called a stress test, not a preseason backtest. The 2024
 board aggregates weekly out-of-sample forecasts that use information available
@@ -117,9 +119,15 @@ The current board omits hindsight and actual columns until 2026 games are
 completed. Historical validation outputs remain in `results/`; no realized
 outcome enters the live recommendation or replacement-value calculation.
 
+Starter information comes from the latest nflverse depth chart and active
+roster. Detailed injury designations are ingested when a current nflverse injury
+file exists. Before the league publishes that report, the board displays
+"unavailable" and treats missing injury data as unknown, never as healthy.
+
 The public GitHub Pages site contains only this draft-board interface. Pushes to
 `main` run the test suite and deploy the static `web/` directory through
 `.github/workflows/pages.yml`. The workflow also refreshes and deploys current
 inputs daily at 11:00 UTC, which is 4:00 AM Pacific during daylight time.
 
-See `docs/METHODOLOGY.md`, `docs/SOURCES.md`, and `results/MODEL_CARD.md`.
+See `docs/DRAFT_DECISION_MODEL.md`, `docs/METHODOLOGY.md`, `docs/SOURCES.md`,
+and `results/MODEL_CARD.md`.
