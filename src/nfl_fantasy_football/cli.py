@@ -8,7 +8,8 @@ import pandas as pd
 from .calibration import nested_calibration_backtest
 from .config import PROJECT_ROOT, load_config
 from .data import download_nflverse, load_player_games
-from .draft_board import export_draft_board
+from .draft_board import build_player_rankings, export_draft_board
+from .draft_strategy import simulate_draft_policy
 from .evaluation import BacktestSpec, summarize_backtest, walk_forward_backtest
 from .factor_study import screen_context_factors
 from .features import build_features
@@ -246,6 +247,42 @@ def _draft_board(args: argparse.Namespace) -> None:
     print(f"wrote draft-board projections to {destination}")
 
 
+def _draft_policy_stress_test(args: argparse.Namespace) -> None:
+    results = PROJECT_ROOT / "results"
+    fantasy = pd.read_parquet(results / "fantasy_point_predictions.parquet")
+    components = pd.concat(
+        [
+            pd.read_parquet(results / "development_predictions.parquet"),
+            pd.read_parquet(results / "expanded_predictions.parquet"),
+        ],
+        ignore_index=True,
+    )
+    players = build_player_rankings(fantasy, components, season=args.season)
+    rows = [
+        simulate_draft_policy(
+            players,
+            teams=args.teams,
+            draft_slot=draft_slot,
+            rounds=args.rounds,
+            strategy=strategy,
+            scenario=scenario,
+        )
+        for scenario in args.scenarios
+        for strategy in ("dynamic", "greedy", "format", "raw_points")
+        for draft_slot in range(1, args.teams + 1)
+    ]
+    report = pd.DataFrame(rows)
+    destination = results / "draft_policy_stress_test.csv"
+    report.to_csv(destination, index=False)
+    summary = report.groupby(["scenario", "strategy"], as_index=False).agg(
+        mean_projected_starter_points=("projected_starter_points", "mean"),
+        mean_actual_starter_points=("actual_starter_points", "mean"),
+        worst_actual_starter_points=("actual_starter_points", "min"),
+    )
+    print(summary.round(2).to_string(index=False))
+    print(f"wrote draft-policy stress test to {destination}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="nfl-fantasy")
     commands = parser.add_subparsers(required=True)
@@ -295,6 +332,14 @@ def build_parser() -> argparse.ArgumentParser:
     draft_board = commands.add_parser("draft-board")
     draft_board.add_argument("--season", type=int)
     draft_board.set_defaults(handler=_draft_board)
+    draft_policy = commands.add_parser("draft-policy-stress-test")
+    draft_policy.add_argument("--season", type=int)
+    draft_policy.add_argument("--teams", type=int, default=12)
+    draft_policy.add_argument("--rounds", type=int, default=12)
+    draft_policy.add_argument(
+        "--scenarios", nargs="+", default=["balanced", "rb_rush", "wr_rush"]
+    )
+    draft_policy.set_defaults(handler=_draft_policy_stress_test)
     return parser
 
 

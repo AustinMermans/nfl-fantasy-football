@@ -115,3 +115,39 @@ The August 31, 2026 catalog audit found Kalshi histories beginning October 6,
 contains a longer anytime-touchdown catalog but only one recognized 2024
 passing-yard contract. These sources therefore cannot yet be used to tune the
 official model without violating the holdout design.
+
+## Draft recommendation
+
+The draft layer does not train new player outcomes or alter the component
+forecast. It converts projected season points into a format-specific sequential
+decision. League-wide base starter counts are the number of teams times each
+position slot. FLEX slots are allocated to the highest projected remaining
+RB/WR/TE players, and each position's last selected starter defines replacement
+value. This removes the former fixed replacement ranks and positional weights.
+
+During a draft, the browser persists the Mine/Taken log and league settings,
+computes the snake turn, and projects opponent selections until the user's next
+turn. For each available candidate, it protects that player, removes the
+projected intervening selections, takes the best single surviving option at the
+next turn, and optimizes a QB/RB/WR/TE/FLEX/K starting lineup from those picks
+and the user's roster. Empty slots are filled at format-derived replacement so
+an incomplete roster does not make raw QB points dominate. Candidate ordering
+is lexicographic: two-pick projected starter value, expected availability,
+same-position next-turn gap, then format-derived replacement value. No realized
+outcome enters this recommendation.
+
+The opponent policy can follow recent room behavior, remain balanced, or impose
+an RB/WR run through round two. It is deterministic and has a one-turn horizon.
+It does not yet estimate pick-by-pick survival probabilities from historical
+ADP, simulate injuries or correlated weekly outcomes, value bench options, or
+solve the complete draft as a stochastic game. Those require point-in-time ADP
+and predictive distributions and must be evaluated in a preseason walk-forward
+draft backtest before the layer can be called optimized.
+
+The deterministic stress test replays every snake slot for three opponent
+policies and compares next-turn lookahead, roster-aware greedy value, the fixed
+format-value list, and raw projected points. It scores the best realized legal
+starting lineup. This diagnoses policy mechanics but is not a preseason
+backtest: the current season totals aggregate weekly out-of-sample forecasts
+whose role, injury, and matchup inputs arrived after the preseason draft date.
+A valid test must freeze features and availability before Week 1 in every year.

@@ -34,6 +34,7 @@ nfl-fantasy fantasy-evaluation
 nfl-fantasy market-catalog-audit
 nfl-fantasy market-feature-audit --quotes path/to/canonical_quotes.parquet
 nfl-fantasy draft-board
+nfl-fantasy draft-policy-stress-test
 python -m pytest
 ```
 
@@ -65,21 +66,45 @@ component projections, and stores Mine/Taken actions and undo history in the
 local browser. It is a model-inspection view until a current-season production
 forecast and final league roster settings are available.
 
-The default draft-order sort converts projected points into value over a
-position-specific replacement player for a 12-team, 1QB/2RB/2WR/1TE/1 FLEX
-format. It applies explicit opportunity-cost discounts to QB, TE, and K. Raw
-model season points and points per game remain separate sortable views. This is
-a model-based draft heuristic, not market ADP.
+The live draft sort is a sequential recommendation rather than a fixed weighted
+list. League size and lineup slots determine replacement levels directly: base
+starters are allocated first, then FLEX demand goes to the highest projected
+remaining RB/WR/TE players. There are no hand-set QB, TE, or K discounts.
+
+At every Mine/Taken action, the board recomputes the current snake pick, the
+number of selections before the user's next turn, the user's starter
+composition, and the players likely to leave the available pool. Candidates are
+ordered by projected starter value from the current pick plus the best single
+option at the next turn, with empty slots scored at format-derived replacement.
+Ties then use expected disappearance and the same-position points gap. Controls
+support 8-16 teams, any snake slot, an adaptive
+room, a balanced room, and explicit first-two-round RB or WR runs. This is a
+deterministic one-turn lookahead using model value as the opponent policy, not
+market ADP or a multi-round stochastic draft solution.
+
+`draft-policy-stress-test` replays every snake slot against balanced, RB-run,
+and WR-run opponent policies and reports projected and realized starter points.
+On the 2024 diagnostic, next-turn lookahead beats a fixed format-value list but
+does not consistently beat a simpler roster-aware greedy policy: it wins the RB
+run and trails slightly in balanced and WR-run rooms. The report is written to
+`results/draft_policy_stress_test.csv`.
+
+This is deliberately called a stress test, not a preseason backtest. The 2024
+board aggregates weekly out-of-sample forecasts that use information available
+before each game, including in-season role and injury updates, rather than one
+frozen snapshot available before Week 1. A valid preseason policy evaluation
+still requires yearly Week-0 feature snapshots and point-in-time ADP.
 
 Because the current board is built from the completed 2024 validation season,
 it also reports and sorts by actual fantasy points at the season and game level.
 Actual outcomes are evaluation context only and do not enter the draft-value
 calculation.
 
-Every player row shows two paired audits: model draft rank versus the hindsight-
-optimal draft rank from actual outcomes, and model projected-points rank versus
-actual-points rank. The optimal draft order recomputes replacement values from
-realized scoring under the same league and positional assumptions.
+Every player row shows two paired audits: live model recommendation versus
+hindsight format value from actual outcomes, and model projected-points rank
+versus actual-points rank. The hindsight column recomputes replacement value
+from realized scoring under the selected league size; it is not a claim that a
+single static order is a globally optimal draft.
 
 The public GitHub Pages site contains only this draft-board interface. Pushes to
 `main` run the test suite and deploy the static `web/` directory through

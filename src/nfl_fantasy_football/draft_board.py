@@ -7,6 +7,7 @@ from pathlib import Path
 import pandas as pd
 
 from .config import PROJECT_ROOT
+from .draft_strategy import DEFAULT_ROSTER_SLOTS, format_draft_metrics
 from .fantasy import DEPLOYMENT_SELECTION, _selected_long
 
 
@@ -62,10 +63,6 @@ POSITION_DISPLAY_FIELDS = {
     ),
 }
 
-DEFAULT_REPLACEMENT_RANKS = {"QB": 12, "RB": 30, "WR": 36, "TE": 12, "K": 12}
-DEFAULT_DRAFT_WEIGHTS = {"QB": 0.55, "RB": 1.0, "WR": 1.0, "TE": 0.8, "K": 0.05}
-
-
 def _number(value: object, digits: int = 1) -> float:
     return round(float(0.0 if pd.isna(value) else value), digits)
 
@@ -75,50 +72,13 @@ def _venue(game_id: str, team: str) -> str:
     return "vs" if team == home_team else "at"
 
 
-def _draft_metrics(
-    frame: pd.DataFrame,
-    points_column: str,
-    replacement_ranks: dict[str, int],
-    draft_weights: dict[str, float],
-) -> tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
-    replacement_by_position = {}
-    for position, position_frame in frame.groupby("position"):
-        ordered = position_frame.sort_values(points_column, ascending=False)
-        replacement_rank = min(
-            replacement_ranks.get(position, len(ordered)), len(ordered)
-        )
-        replacement_by_position[position] = float(
-            ordered.iloc[replacement_rank - 1][points_column]
-        )
-    replacement = frame["position"].map(replacement_by_position)
-    value_over_replacement = frame[points_column] - replacement
-    weights = frame["position"].map(draft_weights).fillna(1.0)
-    draft_value = value_over_replacement.where(
-        value_over_replacement.le(0), value_over_replacement * weights
-    )
-    ranked = frame.assign(_draft_value=draft_value).sort_values(
-        ["_draft_value", points_column, "player_name"],
-        ascending=[False, False, True],
-    )
-    rank_by_player = {
-        player_id: rank
-        for rank, player_id in enumerate(ranked["player_id"], start=1)
-    }
-    return (
-        replacement,
-        value_over_replacement,
-        draft_value,
-        frame["player_id"].map(rank_by_player).astype(int),
-    )
-
-
 def build_player_rankings(
     fantasy_predictions: pd.DataFrame,
     component_predictions: pd.DataFrame,
     *,
     season: int | None = None,
-    replacement_ranks: dict[str, int] | None = None,
-    draft_weights: dict[str, float] | None = None,
+    teams: int = 12,
+    roster_slots: dict[str, int] | None = None,
 ) -> list[dict[str, object]]:
     """Aggregate one season of out-of-sample game forecasts into player rankings."""
     selected_season = int(season or fantasy_predictions["season"].max())
@@ -193,22 +153,28 @@ def build_player_rankings(
         .rank(method="first", ascending=False)
         .astype(int)
     )
-    replacement_config = replacement_ranks or DEFAULT_REPLACEMENT_RANKS
-    weight_config = draft_weights or DEFAULT_DRAFT_WEIGHTS
     (
         totals["replacement_points"],
-        totals["value_over_replacement"],
         totals["draft_value"],
         totals["draft_rank"],
-    ) = _draft_metrics(
-        totals, "projected_points", replacement_config, weight_config
+    ) = format_draft_metrics(
+        totals,
+        "projected_points",
+        teams=teams,
+        roster_slots=roster_slots,
     )
+    totals["value_over_replacement"] = totals["draft_value"]
     (
         totals["actual_replacement_points"],
-        totals["actual_value_over_replacement"],
         totals["actual_draft_value"],
         totals["actual_draft_rank"],
-    ) = _draft_metrics(totals, "actual_points", replacement_config, weight_config)
+    ) = format_draft_metrics(
+        totals,
+        "actual_points",
+        teams=teams,
+        roster_slots=roster_slots,
+    )
+    totals["actual_value_over_replacement"] = totals["actual_draft_value"]
 
     rows: list[dict[str, object]] = []
     for row in totals.itertuples(index=False):
@@ -289,8 +255,9 @@ def export_draft_board(
         "projectionSeason": selected_season,
         "scoring": "Traditional non-PPR",
         "scope": "Out-of-sample development ranking",
-        "draftFormat": "12-team · 1 QB · 2 RB · 2 WR · 1 TE · 1 FLEX",
-        "draftMethod": "Value over replacement with one-QB, tight-end, and kicker opportunity-cost adjustments",
+        "draftFormat": "12-team · 1 QB · 2 RB · 2 WR · 1 TE · 1 FLEX · 1 K",
+        "draftMethod": "Format-derived starter value with live next-turn scarcity and roster fit",
+        "draftConfig": {"teams": 12, "draftSlot": 1, "rosterSlots": DEFAULT_ROSTER_SLOTS},
         "players": build_player_rankings(
             fantasy, component_predictions, season=selected_season
         ),

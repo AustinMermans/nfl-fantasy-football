@@ -5,8 +5,9 @@
 Development model. The 2025 final holdout has not been opened. Traditional
 non-PPR scoring is now the working assumption. The draft board publishes the
 latest 2024 out-of-sample development ranking for model inspection; it is not a
-current-season preseason ranking or an optimized draft order. Final roster
-rules are still required for replacement value and draft optimization.
+current-season preseason ranking or a globally optimized draft order. The live
+board now accepts league size and draft slot, with the traditional lineup shown
+below as its default.
 
 ## Data and cohort
 
@@ -99,17 +100,31 @@ The validation board also exposes actual 2024 fantasy points by season and game
 for direct forecast auditing. Actual outcomes are display-only and do not enter
 projection ranks, replacement values, or draft ranks.
 
-Rows report four distinct ranks: model and hindsight-optimal draft ranks from
-projected and actual replacement value, respectively, plus raw model and actual
-season-points ranks. The hindsight ranking is an evaluation benchmark, not
-information available at draft time.
+Rows report four distinct ranks: a live recommendation and hindsight format
+value, plus raw model and actual season-points ranks. The hindsight ranking is
+an evaluation benchmark and never enters the recommendation.
 
-Draft order uses value over position-specific replacement under an assumed
-12-team, 1QB/2RB/2WR/1TE/1 FLEX lineup. Replacement ranks are QB12, RB30, WR36,
-TE12, and K12. Positive replacement value is multiplied by explicit positional
-opportunity-cost weights (QB `0.55`, RB `1.0`, WR `1.0`, TE `0.8`, K `0.05`).
-This heuristic prevents raw quarterback and kicker scoring from dominating the
-board but is not observed ADP or a full sequential-draft optimizer.
+Replacement demand is now derived from the selected team count and the default
+1QB/2RB/2WR/1TE/1 FLEX/1K starting lineup. Base slots are allocated first and
+FLEX slots go to the highest projected remaining RB/WR/TE players. Draft value
+is the unweighted point difference from the last format-derived starter; the
+former fixed QB12/RB30/WR36/TE12/K12 ranks and `0.55/1.0/1.0/0.8/0.05`
+positional multipliers have been removed.
+
+The live layer evaluates the available pool, the user's current roster, snake
+slot, picks until the next turn, and a deterministic opponent policy. Each
+candidate is evaluated with the best single option at the next turn; empty
+starter slots are scored at format-derived replacement. Ordering then considers
+expected disappearance and the points gap to the best same-position survivor.
+Explicit RB-run and WR-run scenarios expose sensitivity to positional cascades;
+an adaptive setting follows a strong recent room run.
+
+The 2024 deterministic stress test covers all 12 snake slots. Mean realized
+starter points for next-turn lookahead versus roster-aware greedy selection are
+`1393.85` versus `1423.91` in balanced rooms, `1506.23` versus `1476.28` in an
+RB run, and `1629.48` versus `1658.15` in a WR run. Lookahead consistently beats
+the fixed format-value list, but it does not dominate the stronger comparator.
+These values are policy diagnostics, not an independent performance estimate.
 
 ## Factor screen
 
@@ -136,6 +151,11 @@ cross-fold grouped improvement exceeds the screened subset.
   grouped improvement but fails the individual-field multiple-testing gate.
 - Component dependence and predictive distributions are not yet simulated, so
   ceiling, floor, best-ball, and head-to-head draft objectives are not available.
+- The live draft policy has only a deterministic one-turn lookahead. Historical
+  point-in-time ADP, probabilistic player survival, bench option value, and a
+  preseason walk-forward draft backtest are not yet available. The current
+  stress test aggregates weekly forecasts containing in-season information, so
+  recommendation ranks should not be interpreted as a proven optimal policy.
 
 ## Deployment gates
 
