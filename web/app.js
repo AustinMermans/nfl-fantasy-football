@@ -19,6 +19,13 @@
     scoring: { ...baseScoring },
   };
   let recommendationCache = { key: null, value: null };
+  const roomModels = {
+    balanced: { label: "Balanced", prior: 0.40 },
+    rb_heavy: { label: "RB-heavy", prior: 0.15 },
+    wr_heavy: { label: "WR-heavy", prior: 0.15 },
+    early_qb: { label: "Early-QB", prior: 0.15 },
+    zero_rb: { label: "Zero-RB", prior: 0.15 },
+  };
   const $ = (id) => document.getElementById(id);
   const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (char) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;",
@@ -179,18 +186,16 @@
     return Math.max(0, expectedBest - Math.max(pointsFor(player), replacement));
   }
 
-  function runPosition() {
-    if (state.scenario === "rb_rush") return "RB";
-    if (state.scenario === "wr_rush") return "WR";
-    if (state.scenario !== "adaptive") return null;
-    const otherPicks = state.picks.filter((pick) => pick.owner === "other");
-    const recent = otherPicks.slice(-Math.min(8, otherPicks.length))
-      .map((pick) => data.players.find((player) => player.id === pick.id)?.position)
-      .filter(Boolean);
-    if (recent.length < 4) return null;
-    const counts = recent.reduce((result, position) => ({ ...result, [position]: (result[position] || 0) + 1 }), {});
-    const leader = ["RB", "WR"].sort((a, b) => (counts[b] || 0) - (counts[a] || 0))[0];
-    return (counts[leader] || 0) >= Math.ceil(recent.length / 2) ? leader : null;
+  function archetypeBonus(archetype, position, round) {
+    if (archetype === "rb_heavy") return position === "RB" && round <= 4 ? 2.5 : 0;
+    if (archetype === "wr_heavy") return position === "WR" && round <= 4 ? 2.5 : 0;
+    if (archetype === "early_qb") return position === "QB" && round <= 4 ? 2.7 : 0;
+    if (archetype === "zero_rb" && round <= 5) {
+      if (position === "RB") return -1.6;
+      if (position === "WR") return 0.75;
+      if (position === "TE") return 0.25;
+    }
+    return 0;
   }
 
   function seededRandom(seed) {
@@ -217,7 +222,7 @@
     return rosters;
   }
 
-  function opponentUtility(player, overallPick, manager, metrics, rosters) {
+  function opponentUtility(player, overallPick, manager, metrics, rosters, archetype) {
     const round = Math.floor((overallPick - 1) / state.teams) + 1;
     const counts = rosters.get(manager) || {};
     const slots = defaultConfig.rosterSlots;
@@ -226,12 +231,59 @@
     if ((counts[player.position] || 0) < (slots[player.position] || 0)) utility += 1.0;
     if (["QB", "TE", "K"].includes(player.position) && (counts[player.position] || 0) >= (slots[player.position] || 0)) utility -= 0.9;
     if (["RB", "WR"].includes(player.position)) utility += 0.18;
-    const run = runPosition();
-    if (run === player.position && (state.scenario === "adaptive" || round <= 2)) utility += 0.75;
+    utility += archetypeBonus(archetype, player.position, round);
     return utility;
   }
 
-  function stochasticOpponentPicks(available, candidateId, count, afterPick, metrics, seed) {
+  function normalizedPosterior(logProbabilities) {
+    const anchor = Math.max(...Object.values(logProbabilities));
+    const weights = Object.fromEntries(Object.entries(logProbabilities).map(([name, value]) => [name, Math.exp(value - anchor)]));
+    const total = Object.values(weights).reduce((sum, value) => sum + value, 0);
+    return Object.fromEntries(Object.entries(weights).map(([name, value]) => [name, value / total]));
+  }
+
+  function roomPosterior(metrics) {
+    const logs = Object.fromEntries(Object.entries(roomModels).map(([name, model]) => [name, Math.log(model.prior)]));
+    const rosters = new Map();
+    let pool = [...data.players];
+    state.picks.forEach((pick, index) => {
+      const player = data.players.find((item) => item.id === pick.id);
+      if (!player) return;
+      const overallPick = Number(pick.overallPick || index + 1);
+      const manager = Number(pick.drafterTeam || snakeTeam(overallPick));
+      if (pick.owner === "other") {
+        let riskSet = [...pool].sort((a, b) => metrics.get(a.id).rank - metrics.get(b.id).rank).slice(0, 180);
+        if (!riskSet.some((item) => item.id === player.id)) riskSet.push(player);
+        Object.keys(roomModels).forEach((archetype) => {
+          const utilities = riskSet.map((item) => opponentUtility(item, overallPick, manager, metrics, rosters, archetype));
+          const anchor = Math.max(...utilities);
+          const weights = utilities.map((utility) => Math.exp(utility - anchor));
+          const total = weights.reduce((sum, value) => sum + value, 0);
+          const positionWeight = weights.reduce((sum, value, itemIndex) => sum + (riskSet[itemIndex].position === player.position ? value : 0), 0);
+          logs[archetype] += Math.log(Math.max(positionWeight / total, 1e-6));
+        });
+      }
+      const counts = rosters.get(manager) || {};
+      counts[player.position] = (counts[player.position] || 0) + 1;
+      rosters.set(manager, counts);
+      pool = pool.filter((item) => item.id !== player.id);
+    });
+    return normalizedPosterior(logs);
+  }
+
+  function simulationArchetype(posterior, random) {
+    const fixed = { balanced: "balanced", rb_rush: "rb_heavy", wr_rush: "wr_heavy", early_qb: "early_qb", zero_rb: "zero_rb" }[state.scenario];
+    if (fixed) return fixed;
+    const threshold = random();
+    let cumulative = 0;
+    for (const [name, probability] of Object.entries(posterior)) {
+      cumulative += probability;
+      if (threshold <= cumulative) return name;
+    }
+    return "balanced";
+  }
+
+  function stochasticOpponentPicks(available, candidateId, count, afterPick, metrics, posterior, seed) {
     const marketPool = available
       .filter((player) => player.id !== candidateId)
       .sort((a, b) => metrics.get(a.id).rank - metrics.get(b.id).rank)
@@ -239,11 +291,12 @@
     const deepPool = available.filter((player) => !marketPool.includes(player) && player.id !== candidateId);
     const rosters = observedRosterCounts();
     const random = seededRandom(seed);
+    const archetype = simulationArchetype(posterior, random);
     const removed = [];
     for (let index = 0; index < count && marketPool.length; index += 1) {
       const overallPick = afterPick + index + 1;
       const manager = snakeTeam(overallPick);
-      const utilities = marketPool.map((player) => opponentUtility(player, overallPick, manager, metrics, rosters));
+      const utilities = marketPool.map((player) => opponentUtility(player, overallPick, manager, metrics, rosters, archetype));
       const anchor = Math.max(...utilities);
       const weights = utilities.map((utility) => Math.exp(utility - anchor));
       const threshold = random() * weights.reduce((sum, value) => sum + value, 0);
@@ -268,6 +321,7 @@
     const available = data.players.filter((player) => statusFor(player.id) === "available");
     const myRoster = data.players.filter((player) => statusFor(player.id) === "mine");
     const metrics = formatMetrics();
+    const posterior = roomPosterior(metrics);
     const currentPick = state.picks.length + 1;
     const onClock = snakeTeam(currentPick) === state.draftSlot;
     const decisionPick = onClock ? currentPick : nextPickForTeam(currentPick - 1);
@@ -277,7 +331,7 @@
     const seeds = Array.from({ length: simulationCount }, (_, index) => 104729 + index * 1543 + state.picks.length * 37);
     const baselineSurvival = new Map(available.map((player) => [player.id, 0]));
     seeds.forEach((seed) => {
-      const survivors = new Set(stochasticOpponentPicks(available, "", opponentPicks, decisionPick, metrics, seed).survivors.map((player) => player.id));
+      const survivors = new Set(stochasticOpponentPicks(available, "", opponentPicks, decisionPick, metrics, posterior, seed).survivors.map((player) => player.id));
       available.forEach((player) => { if (survivors.has(player.id)) baselineSurvival.set(player.id, baselineSurvival.get(player.id) + 1); });
     });
     const shortlist = new Set([
@@ -297,7 +351,7 @@
       if (state.policy === "lookahead" && shortlist.has(candidate.id) && opponentPicks > 0) {
         let total = 0;
         seeds.forEach((seed) => {
-          const simulation = stochasticOpponentPicks(available, candidate.id, opponentPicks, decisionPick, metrics, seed);
+          const simulation = stochasticOpponentPicks(available, candidate.id, opponentPicks, decisionPick, metrics, posterior, seed);
           const nextOptions = ["QB", "RB", "WR", "TE", "K"].map((position) => simulation.survivors
             .filter((player) => player.position === position)
             .sort((a, b) => pointsFor(b) - pointsFor(a))[0]).filter(Boolean);
@@ -336,7 +390,7 @@
     const pointRanks = new Map([...data.players]
       .sort((a, b) => pointsFor(b) - pointsFor(a) || a.name.localeCompare(b.name))
       .map((player, index) => [player.id, index + 1]));
-    const result = { candidates, byId: new Map(candidates.map((candidate) => [candidate.player.id, candidate])), currentPick, decisionPick, nextTurn, opponentPicks, onClock, metrics, pointRanks };
+    const result = { candidates, byId: new Map(candidates.map((candidate) => [candidate.player.id, candidate])), currentPick, decisionPick, nextTurn, opponentPicks, onClock, metrics, pointRanks, posterior };
     recommendationCache = { key: cacheKey, value: result };
     return result;
   }
@@ -539,6 +593,13 @@
     $("nextTurnMeta").textContent = `${recommendations.opponentPicks} opponent picks away`;
     $("rosterNeeds").innerHTML = rosterNeeds();
     $("undoButton").disabled = state.picks.length === 0;
+    const orderedPosterior = Object.entries(recommendations.posterior).sort((a, b) => b[1] - a[1]);
+    const fullPosterior = orderedPosterior.map(([name, probability]) => `${roomModels[name].label} ${Math.round(probability * 100)}%`).join(" · ");
+    const fixedModel = { balanced: "balanced", rb_rush: "rb_heavy", wr_rush: "wr_heavy", early_qb: "early_qb", zero_rb: "zero_rb" }[state.scenario];
+    $("roomPosteriorLabel").textContent = fixedModel
+      ? `Fixed: ${roomModels[fixedModel].label}`
+      : `Posterior: ${orderedPosterior.slice(0, 2).map(([name, probability]) => `${roomModels[name].label} ${Math.round(probability * 100)}%`).join(" · ")}`;
+    $("roomPosteriorLabel").title = fullPosterior;
   }
 
   function render() {

@@ -35,7 +35,7 @@ For each candidate `a`, the board estimates:
 
 It uses 16 common-seed Monte Carlo paths. Each intervening manager samples an
 available player from a softmax over format-value rank, unfilled starter need,
-duplicate-position cost, RB/WR bench demand, and the selected room-run scenario.
+duplicate-position cost, RB/WR bench demand, and a sampled room archetype.
 The candidate with the largest expected two-turn legal-lineup value ranks first.
 The board also reports the fraction of baseline paths in which each player
 survives to the next turn.
@@ -49,6 +49,14 @@ This is a transparent quantal-response prior. Its probabilities are not yet
 calibrated because the repository does not contain point-in-time historical
 draft-room logs. Market ADP belongs in this opponent-choice layer, not in the
 player-value forecast.
+
+The adaptive room model begins with a 40% Balanced prior and 15% each on
+RB-heavy, WR-heavy, Early-QB, and Zero-RB. For every logged opponent pick, it
+computes the probability that each archetype would select that position from
+the then-available risk set and applies Bayes' rule. Each simulation samples one
+archetype from the resulting posterior, preserving uncertainty instead of
+switching abruptly after a recent-pick threshold. These priors and likelihood
+bonuses are declared assumptions pending historical draft-log calibration.
 
 ## Expert review consensus
 

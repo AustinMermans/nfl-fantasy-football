@@ -60,6 +60,7 @@ h1 { margin: 0; font-size: 38px; line-height: 1.05; letter-spacing: 0; }
 .draft-setup { margin-bottom: 12px; display: grid; grid-template-columns: 130px 120px 190px 190px 1fr; align-items: end; gap: 12px; padding: 14px 16px; background: #e9eeeb; border: 1px solid #d7ddd9; }
 .draft-setup label, .roster-needs { display: grid; gap: 6px; }
 .draft-setup label > span, .roster-needs > span { color: var(--muted); font-size: 9px; font-weight: 850; text-transform: uppercase; }
+.draft-setup label > small { min-height: 12px; color: var(--green); font-size: 9px; font-weight: 750; }
 .draft-setup select, .draft-setup input { width: 100%; height: 38px; padding: 0 10px; color: var(--ink); background: #fff; border: 1px solid #c8d0cb; border-radius: 4px; outline: none; }
 .draft-setup select:focus, .draft-setup input:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(23,99,63,.12); }
 .need-chips { min-height: 38px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }

@@ -133,6 +133,12 @@ candidate is ranked by expected legal-lineup value after the next turn. Rookie
 uncertainty contributes expected option payoff above replacement, and the UI
 reports empirical P10/P50/P90 plus simulated next-turn survival.
 
+Adaptive opponent behavior is a five-model Bayesian mixture: 40% prior mass on
+Balanced and 15% each on RB-heavy, WR-heavy, Early-QB, and Zero-RB. Each observed
+opponent position updates the mixture by its conditional likelihood over the
+then-available risk set. A simulation samples one archetype from the posterior.
+The assumptions are visible and uncalibrated pending point-in-time draft logs.
+
 The 2024 deterministic stress test covers all 12 snake slots. Mean realized
 starter points for next-turn lookahead versus roster-aware greedy selection are
 `1393.85` versus `1423.91` in balanced rooms, `1506.23` versus `1476.28` in an

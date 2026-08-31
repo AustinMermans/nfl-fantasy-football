@@ -6,10 +6,10 @@
   <meta name="color-scheme" content="light">
   <title>NFL Fantasy Draft Board</title>
   <link rel="preconnect" href="https://a.espncdn.com">
-  <link rel="stylesheet" href="styles.css?v=20260831-probability-draft">
+  <link rel="stylesheet" href="styles.css?v=20260831-bayesian-room">
   <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
-  <script src="projections.js?v=20260831-probability-draft"></script>
-  <script src="app.js?v=20260831-probability-draft" defer></script>
+  <script src="projections.js?v=20260831-bayesian-room"></script>
+  <script src="app.js?v=20260831-bayesian-room" defer></script>
 </head>
 <body>
   <div id="error" class="fatal" hidden></div>
@@ -64,11 +64,14 @@
         <label>
           <span>Opponent behavior</span>
           <select id="scenarioSelect">
-            <option value="adaptive">Follow current room</option>
+            <option value="adaptive">Follow current room (Bayesian)</option>
             <option value="balanced">Balanced</option>
             <option value="rb_rush">RB rush, rounds 1-2</option>
             <option value="wr_rush">WR rush, rounds 1-2</option>
+            <option value="early_qb">Early QB room</option>
+            <option value="zero_rb">Zero RB room</option>
           </select>
+          <small id="roomPosteriorLabel"></small>
         </label>
         <label>
           <span>Recommendation policy</span>

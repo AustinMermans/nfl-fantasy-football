@@ -87,8 +87,9 @@ remaining RB/WR/TE players. There are no hand-set QB, TE, or K discounts.
 
 At every Mine/Taken action, the board recomputes the snake state and runs 16
 common-seed simulations of the intervening picks. Opponents follow a
-roster-aware quantal-response policy over format-value rank; observed room runs
-update the selected scenario. Candidate utility is the expected legal starter
+roster-aware quantal-response policy over format-value rank. Logged opponent
+picks update a Bayesian mixture of Balanced, RB-heavy, WR-heavy, Early-QB, and
+Zero-RB room styles. Candidate utility is the expected legal starter
 value after the next turn. Rookie uncertainty adds only expected option payoff
 above the position replacement level, rather than a manual rookie bonus.
 Controls support 8-16 teams, any snake slot, Standard/Half/Full PPR, four- or

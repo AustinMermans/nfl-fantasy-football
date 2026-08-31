@@ -67,3 +67,18 @@ def bench_option_value(outcomes: Sequence[float], replacement_points: float) -> 
     if not outcomes:
         return 0.0
     return sum(max(0.0, float(value) - replacement_points) for value in outcomes) / len(outcomes)
+
+
+def bayesian_model_update(
+    prior: Mapping[str, float], likelihood: Mapping[str, float]
+) -> dict[str, float]:
+    """Update a finite mixture of opponent-room models after an observed pick."""
+    if set(prior) != set(likelihood) or not prior:
+        raise ValueError("prior and likelihood must contain the same models")
+    weights = {
+        name: float(prior[name]) * float(likelihood[name]) for name in prior
+    }
+    if any(value < 0 for value in weights.values()) or sum(weights.values()) <= 0:
+        raise ValueError("Bayesian weights must be nonnegative with positive mass")
+    total = sum(weights.values())
+    return {name: value / total for name, value in weights.items()}

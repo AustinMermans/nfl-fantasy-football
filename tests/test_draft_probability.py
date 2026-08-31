@@ -2,6 +2,7 @@ import pytest
 
 from nfl_fantasy_football.draft_probability import (
     LeagueConfig,
+    bayesian_model_update,
     bench_option_value,
     conditional_survival,
     quantal_response_probabilities,
@@ -25,3 +26,11 @@ def test_bench_option_value_only_counts_upside_over_replacement() -> None:
 def test_league_config_rejects_invalid_draft_slot() -> None:
     with pytest.raises(ValueError):
         LeagueConfig(teams=10, draft_slot=11)
+
+
+def test_bayesian_room_update_moves_mass_toward_likely_model() -> None:
+    posterior = bayesian_model_update(
+        {"balanced": 0.5, "rb_heavy": 0.5},
+        {"balanced": 0.2, "rb_heavy": 0.8},
+    )
+    assert posterior == pytest.approx({"balanced": 0.2, "rb_heavy": 0.8})
