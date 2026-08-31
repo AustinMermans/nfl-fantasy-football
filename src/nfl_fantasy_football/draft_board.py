@@ -75,6 +75,43 @@ def _venue(game_id: str, team: str) -> str:
     return "vs" if team == home_team else "at"
 
 
+def _draft_metrics(
+    frame: pd.DataFrame,
+    points_column: str,
+    replacement_ranks: dict[str, int],
+    draft_weights: dict[str, float],
+) -> tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
+    replacement_by_position = {}
+    for position, position_frame in frame.groupby("position"):
+        ordered = position_frame.sort_values(points_column, ascending=False)
+        replacement_rank = min(
+            replacement_ranks.get(position, len(ordered)), len(ordered)
+        )
+        replacement_by_position[position] = float(
+            ordered.iloc[replacement_rank - 1][points_column]
+        )
+    replacement = frame["position"].map(replacement_by_position)
+    value_over_replacement = frame[points_column] - replacement
+    weights = frame["position"].map(draft_weights).fillna(1.0)
+    draft_value = value_over_replacement.where(
+        value_over_replacement.le(0), value_over_replacement * weights
+    )
+    ranked = frame.assign(_draft_value=draft_value).sort_values(
+        ["_draft_value", points_column, "player_name"],
+        ascending=[False, False, True],
+    )
+    rank_by_player = {
+        player_id: rank
+        for rank, player_id in enumerate(ranked["player_id"], start=1)
+    }
+    return (
+        replacement,
+        value_over_replacement,
+        draft_value,
+        frame["player_id"].map(rank_by_player).astype(int),
+    )
+
+
 def build_player_rankings(
     fantasy_predictions: pd.DataFrame,
     component_predictions: pd.DataFrame,
@@ -151,36 +188,27 @@ def build_player_rankings(
         .rank(method="first", ascending=False)
         .astype(int)
     )
+    totals["actual_position_rank"] = (
+        totals.groupby("position")["actual_points"]
+        .rank(method="first", ascending=False)
+        .astype(int)
+    )
     replacement_config = replacement_ranks or DEFAULT_REPLACEMENT_RANKS
     weight_config = draft_weights or DEFAULT_DRAFT_WEIGHTS
-    replacement_points = {}
-    for position, position_frame in totals.groupby("position"):
-        ordered = position_frame.sort_values("projected_points", ascending=False)
-        replacement_rank = min(replacement_config.get(position, len(ordered)), len(ordered))
-        replacement_points[position] = float(
-            ordered.iloc[replacement_rank - 1]["projected_points"]
-        )
-    totals["replacement_points"] = totals["position"].map(replacement_points)
-    totals["value_over_replacement"] = (
-        totals["projected_points"] - totals["replacement_points"]
+    (
+        totals["replacement_points"],
+        totals["value_over_replacement"],
+        totals["draft_value"],
+        totals["draft_rank"],
+    ) = _draft_metrics(
+        totals, "projected_points", replacement_config, weight_config
     )
-    totals["draft_value"] = totals.apply(
-        lambda player: (
-            player["value_over_replacement"]
-            * weight_config.get(player["position"], 1.0)
-            if player["value_over_replacement"] > 0
-            else player["value_over_replacement"]
-        ),
-        axis=1,
-    )
-    draft_order = totals.sort_values(
-        ["draft_value", "projected_points", "player_name"],
-        ascending=[False, False, True],
-    )
-    draft_rank = {
-        player_id: rank
-        for rank, player_id in enumerate(draft_order["player_id"], start=1)
-    }
+    (
+        totals["actual_replacement_points"],
+        totals["actual_value_over_replacement"],
+        totals["actual_draft_value"],
+        totals["actual_draft_rank"],
+    ) = _draft_metrics(totals, "actual_points", replacement_config, weight_config)
 
     rows: list[dict[str, object]] = []
     for row in totals.itertuples(index=False):
@@ -214,17 +242,24 @@ def build_player_rankings(
                 "team": row.team,
                 "rank": int(row.overall_rank),
                 "positionRank": int(row.position_rank),
+                "actualPositionRank": int(row.actual_position_rank),
                 "projectedPoints": round(float(row.projected_points), 1),
                 "actualPoints": round(float(row.actual_points), 1),
                 "pointsPerGame": round(float(row.points_per_game), 2),
                 "actualPointsPerGame": round(float(row.actual_points_per_game), 2),
                 "projectedGames": int(row.projected_games),
                 "modelLift": round(float(row.model_lift), 1),
-                "draftRank": draft_rank[row.player_id],
+                "draftRank": int(row.draft_rank),
+                "actualDraftRank": int(row.actual_draft_rank),
                 "actualRank": int(row.actual_rank),
                 "draftValue": _number(row.draft_value),
+                "actualDraftValue": _number(row.actual_draft_value),
                 "valueOverReplacement": _number(row.value_over_replacement),
+                "actualValueOverReplacement": _number(
+                    row.actual_value_over_replacement
+                ),
                 "replacementPoints": _number(row.replacement_points),
+                "actualReplacementPoints": _number(row.actual_replacement_points),
                 "stats": stats,
                 "games": game_rows,
             }

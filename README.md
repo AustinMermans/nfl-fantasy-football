@@ -59,8 +59,10 @@ it also reports and sorts by actual fantasy points at the season and game level.
 Actual outcomes are evaluation context only and do not enter the draft-value
 calculation.
 
-Every player row shows draft rank, raw model projected-points rank, and realized
-actual-points rank side by side.
+Every player row shows two paired audits: model draft rank versus the hindsight-
+optimal draft rank from actual outcomes, and model projected-points rank versus
+actual-points rank. The optimal draft order recomputes replacement values from
+realized scoring under the same league and positional assumptions.
 
 The public GitHub Pages site contains only this draft-board interface. Pushes to
 `main` run the test suite and deploy the static `web/` directory through

@@ -80,6 +80,9 @@ def test_player_rankings_aggregate_games_and_rank_positions():
         },
     ]
     assert rankings[0]["draftRank"] in {1, 2}
+    assert rankings[0]["actualDraftRank"] == 1
     assert rankings[0]["actualRank"] == 1
+    assert rankings[0]["actualPositionRank"] == 1
     assert rankings[0]["draftValue"] == 0.0
     assert rankings[0]["valueOverReplacement"] == 0.0
+    assert rankings[0]["actualValueOverReplacement"] == 0.0

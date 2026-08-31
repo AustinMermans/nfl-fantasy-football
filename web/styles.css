@@ -74,30 +74,31 @@ h1 { margin: 0; font-size: 38px; line-height: 1.05; letter-spacing: 0; }
 .search-field svg { position: absolute; left: 12px; top: 11px; width: 16px; color: var(--muted); pointer-events: none; }
 .search-field input { width: 250px; height: 40px; padding: 0 12px 0 38px; color: var(--ink); background: #fff; border: 1px solid #cfd6d1; border-radius: 5px; outline: none; }
 .search-field input:focus, .sort-field select:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(23,99,63,.12); }
-.sort-field select { width: 170px; height: 40px; padding: 0 34px 0 12px; appearance: none; color: var(--ink); background: #fff; border: 1px solid #cfd6d1; border-radius: 5px; outline: none; font-size: 12px; font-weight: 700; }
+.sort-field select { width: 220px; height: 40px; padding: 0 34px 0 12px; appearance: none; color: var(--ink); background: #fff; border: 1px solid #cfd6d1; border-radius: 5px; outline: none; font-size: 12px; font-weight: 700; }
 .sort-field svg { position: absolute; right: 11px; top: 12px; width: 15px; pointer-events: none; }
 
 .table-shell { margin-top: 12px; overflow: hidden; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 10px 28px rgba(23,39,31,.06); }
 .rankings-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .rankings-table th { height: 42px; padding: 0 14px; color: var(--muted); background: #f8faf8; border-bottom: 1px solid var(--line); font-size: 10px; text-align: left; text-transform: uppercase; }
+.rankings-table th > small { display: block; margin-top: 3px; color: #8b948f; font-size: 7px; }
 .rankings-table td { height: 62px; padding: 8px 14px; border-bottom: 1px solid #e7eae8; font-size: 12px; }
 .rankings-table tbody tr:last-child td { border-bottom: 0; }
-.rankings-table th:nth-child(1) { width: 142px; }
-.rankings-table th:nth-child(2) { width: 25%; }
-.rankings-table th:nth-child(3) { width: 66px; }
-.rankings-table th:nth-child(4) { width: 68px; }
-.rankings-table th:nth-child(5), .rankings-table th:nth-child(6), .rankings-table th:nth-child(7), .rankings-table th:nth-child(8) { width: 96px; }
-.rankings-table th:nth-child(9) { width: 100px; }
-.rankings-table th:nth-child(10) { width: 124px; }
+.rankings-table th:nth-child(1), .rankings-table th:nth-child(2) { width: 104px; }
+.rankings-table th:nth-child(3) { width: 23%; }
+.rankings-table th:nth-child(4) { width: 60px; }
+.rankings-table th:nth-child(5) { width: 62px; }
+.rankings-table th:nth-child(6), .rankings-table th:nth-child(7), .rankings-table th:nth-child(8), .rankings-table th:nth-child(9) { width: 90px; }
+.rankings-table th:nth-child(10) { width: 96px; }
+.rankings-table th:nth-child(11) { width: 118px; }
 .player-row { cursor: pointer; }
 .player-row:hover { background: #fafcfb; }
 .player-row.mine { background: var(--green-soft); }
 .player-row.other { color: #858d88; background: #f4f5f4; }
-.rank-comparison { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
-.rank-comparison span { min-width: 0; text-align: center; }
-.rank-comparison strong { display: block; font-size: 14px; font-variant-numeric: tabular-nums; }
-.rank-comparison small { display: block; margin-top: 3px; color: var(--muted); font-size: 7px; font-weight: 850; text-transform: uppercase; }
-.rank-comparison span + span { border-left: 1px solid var(--line); }
+.rank-pair { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; }
+.rank-pair span { min-width: 0; text-align: center; }
+.rank-pair strong { display: block; font-size: 14px; font-variant-numeric: tabular-nums; }
+.rank-pair small { display: block; margin-top: 3px; color: var(--muted); font-size: 7px; font-weight: 850; text-transform: uppercase; }
+.rank-pair span + span { border-left: 1px solid var(--line); }
 .player-cell { min-width: 0; display: flex; align-items: center; gap: 11px; }
 .player-cell img { width: 34px; height: 34px; flex: 0 0 auto; object-fit: contain; }
 .player-cell span { min-width: 0; }
@@ -126,7 +127,7 @@ h1 { margin: 0; font-size: 38px; line-height: 1.05; letter-spacing: 0; }
 .row-actions button:hover { color: var(--green); background: #e4eee8; }
 .row-actions svg { width: 15px; height: 15px; }
 .detail-row td { height: auto; padding: 0 !important; background: #f7f9f7; }
-.player-detail { padding: 0 22px 24px 156px; border-bottom: 1px solid var(--line); }
+.player-detail { padding: 0 22px 24px 222px; border-bottom: 1px solid var(--line); }
 .season-components { padding-top: 15px; }
 .detail-label { display: block; margin: 0 0 9px; color: var(--muted); font-size: 9px; font-weight: 850; text-transform: uppercase; }
 .stat-grid { display: grid; grid-template-columns: repeat(6, minmax(84px, 1fr)); border: 1px solid var(--line); background: #fff; }

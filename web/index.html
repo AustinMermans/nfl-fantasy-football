@@ -6,10 +6,10 @@
   <meta name="color-scheme" content="light">
   <title>NFL Fantasy Draft Board</title>
   <link rel="preconnect" href="https://a.espncdn.com">
-  <link rel="stylesheet" href="styles.css?v=20260831-rank-comparison">
+  <link rel="stylesheet" href="styles.css?v=20260831-optimal-draft">
   <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
-  <script src="projections.js?v=20260831-rank-comparison"></script>
-  <script src="app.js?v=20260831-rank-comparison" defer></script>
+  <script src="projections.js?v=20260831-optimal-draft"></script>
+  <script src="app.js?v=20260831-optimal-draft" defer></script>
 </head>
 <body>
   <div id="error" class="fatal" hidden></div>
@@ -52,7 +52,7 @@
           <strong id="bestName">-</strong>
           <small id="bestMeta">-</small>
         </div>
-        <div><span>Projected</span><strong id="bestPoints">-</strong><small>season points</small></div>
+        <div><span id="bestMetricLabel">Projected</span><strong id="bestPoints">-</strong><small id="bestMetricUnit">season points</small></div>
         <div><span>Available</span><strong id="availableCount">-</strong><small>players</small></div>
         <div><span>My roster</span><strong id="mineCount">0</strong><small>players</small></div>
         <div><span>Drafted</span><strong id="takenCount">0</strong><small>by others</small></div>
@@ -76,7 +76,8 @@
           <label class="sort-field">
             <span class="sr-only">Sort projections</span>
             <select id="sortSelect">
-              <option value="draft">Draft order</option>
+              <option value="draft">Model draft order</option>
+              <option value="actual_draft">Optimal draft order (actual)</option>
               <option value="points">Model season points</option>
               <option value="weekly">Model points per game</option>
               <option value="actual">Actual points scored</option>
@@ -93,7 +94,8 @@
         <table class="rankings-table">
           <thead>
             <tr>
-              <th class="rank-cell">Draft · Model · Actual</th>
+              <th class="rank-cell">Draft rank<small>Model · Optimal</small></th>
+              <th class="rank-cell">Points rank<small>Model · Actual</small></th>
               <th>Player</th>
               <th>Pos</th>
               <th>Team</th>

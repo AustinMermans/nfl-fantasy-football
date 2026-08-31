@@ -48,6 +48,7 @@
     });
     const sorters = {
       draft: (a, b) => a.draftRank - b.draftRank,
+      actual_draft: (a, b) => a.actualDraftRank - b.actualDraftRank,
       points: (a, b) => b.projectedPoints - a.projectedPoints || a.rank - b.rank,
       weekly: (a, b) => b.pointsPerGame - a.pointsPerGame || a.rank - b.rank,
       actual: (a, b) => a.actualRank - b.actualRank,
@@ -141,11 +142,17 @@
     const status = statusFor(player.id);
     const expanded = state.expanded === player.id;
     const rowClass = status === "available" ? "" : ` ${status}`;
+    const displayedDraftValue = state.sort === "actual_draft" ? player.actualDraftValue : player.draftValue;
     return `
       <tr class="player-row${rowClass}" data-id="${escapeHtml(player.id)}">
         <td class="rank-cell">
-          <div class="rank-comparison">
-            <span><strong>${player.draftRank}</strong><small>Draft</small></span>
+          <div class="rank-pair">
+            <span><strong>${player.draftRank}</strong><small>Model</small></span>
+            <span><strong>${player.actualDraftRank}</strong><small>Optimal</small></span>
+          </div>
+        </td>
+        <td class="rank-cell">
+          <div class="rank-pair">
             <span><strong>${player.rank}</strong><small>Model</small></span>
             <span><strong>${player.actualRank}</strong><small>Actual</small></span>
           </div>
@@ -161,7 +168,7 @@
         <td class="number-cell projection"><strong>${player.projectedPoints.toFixed(1)}</strong></td>
         <td class="number-cell actual-total">${player.actualPoints.toFixed(1)}</td>
         <td class="number-cell">${player.pointsPerGame.toFixed(2)}</td>
-        <td class="number-cell draft-value">${player.draftValue > 0 ? "+" : ""}${player.draftValue.toFixed(1)}</td>
+        <td class="number-cell draft-value">${displayedDraftValue > 0 ? "+" : ""}${displayedDraftValue.toFixed(1)}</td>
         <td>${statusMarkup(player, status)}</td>
         <td class="actions-cell">
           <div class="row-actions">
@@ -173,7 +180,7 @@
       </tr>
       ${expanded ? `
         <tr class="detail-row">
-          <td colspan="10">${playerDetail(player)}</td>
+          <td colspan="11">${playerDetail(player)}</td>
         </tr>
       ` : ""}
     `;
@@ -182,9 +189,13 @@
   function renderSummary(players) {
     const available = players.filter((player) => statusFor(player.id) === "available");
     const best = available[0];
+    const realizedView = state.sort === "actual" || state.sort === "actual_draft";
     $("bestName").textContent = best?.name || "No player available";
-    $("bestMeta").textContent = best ? `${best.position}${best.positionRank} · ${best.team}` : "-";
-    $("bestPoints").textContent = best ? best.projectedPoints.toFixed(1) : "-";
+    const bestPositionRank = best ? (realizedView ? best.actualPositionRank : best.positionRank) : null;
+    $("bestMeta").textContent = best ? `${best.position}${bestPositionRank} · ${best.team}` : "-";
+    $("bestPoints").textContent = best ? (realizedView ? best.actualPoints : best.projectedPoints).toFixed(1) : "-";
+    $("bestMetricLabel").textContent = realizedView ? "Actual" : "Projected";
+    $("bestMetricUnit").textContent = realizedView ? `${data.projectionSeason} points` : "season points";
     $("availableCount").textContent = data.players.filter((player) => statusFor(player.id) === "available").length;
     $("mineCount").textContent = data.players.filter((player) => statusFor(player.id) === "mine").length;
     $("takenCount").textContent = data.players.filter((player) => statusFor(player.id) === "other").length;
