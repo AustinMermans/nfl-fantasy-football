@@ -89,6 +89,11 @@ does not consistently beat a simpler roster-aware greedy policy: it wins the RB
 run and trails slightly in balanced and WR-run rooms. The report is written to
 `results/draft_policy_stress_test.csv`.
 
+Because the stronger comparator wins two of the three current stress cases, the
+published board defaults to **Roster value**. **Next-turn lookahead** remains an
+explicit policy option for positional-run sensitivity rather than being treated
+as universally superior.
+
 This is deliberately called a stress test, not a preseason backtest. The 2024
 board aggregates weekly out-of-sample forecasts that use information available
 before each game, including in-season role and injury updates, rather than one

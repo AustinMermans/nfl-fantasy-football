@@ -125,6 +125,8 @@ starter points for next-turn lookahead versus roster-aware greedy selection are
 RB run, and `1629.48` versus `1658.15` in a WR run. Lookahead consistently beats
 the fixed format-value list, but it does not dominate the stronger comparator.
 These values are policy diagnostics, not an independent performance estimate.
+The board therefore defaults to roster-aware greedy value and exposes
+next-turn lookahead as a separate selectable policy.
 
 ## Factor screen
 

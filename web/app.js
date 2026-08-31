@@ -9,7 +9,7 @@
   };
   const state = {
     position: "ALL", query: "", sort: "draft", picks: [], expanded: null,
-    teams: Number(defaultConfig.teams || 12), draftSlot: Number(defaultConfig.draftSlot || 1), scenario: "adaptive",
+    teams: Number(defaultConfig.teams || 12), draftSlot: Number(defaultConfig.draftSlot || 1), scenario: "adaptive", policy: "roster",
   };
   const $ = (id) => document.getElementById(id);
   const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (char) => ({
@@ -30,6 +30,7 @@
         state.teams = Number(saved.teams || state.teams);
         state.draftSlot = Math.min(state.teams, Number(saved.draftSlot || state.draftSlot));
         state.scenario = saved.scenario || state.scenario;
+        state.policy = saved.policy || state.policy;
         return;
       }
       const legacy = JSON.parse(localStorage.getItem(legacyStorageKey));
@@ -41,7 +42,7 @@
 
   function savePicks() {
     localStorage.setItem(storageKey, JSON.stringify({
-      picks: state.picks, teams: state.teams, draftSlot: state.draftSlot, scenario: state.scenario,
+      picks: state.picks, teams: state.teams, draftSlot: state.draftSlot, scenario: state.scenario, policy: state.policy,
     }));
   }
 
@@ -182,20 +183,31 @@
         ? Math.max(...nextOptions.map((nextPlayer) => rosterValue([...myRoster, candidate, nextPlayer], metrics)))
         : rosterValue([...myRoster, candidate], metrics);
       const withoutCandidate = rosterValue(myRoster, metrics);
+      const immediateValue = rosterValue([...myRoster, candidate], metrics);
       return {
         player: candidate,
         lineupCeiling,
+        immediateValue,
         protectedGain: lineupCeiling - withoutCandidate,
         nextTurnGap: candidate.projectedPoints - Number(nextAtPosition?.projectedPoints || 0),
         likelyGone,
         baseValue: metrics.get(candidate.id).value,
       };
     });
-    candidates.sort((a, b) => b.lineupCeiling - a.lineupCeiling
-      || Number(b.likelyGone) - Number(a.likelyGone)
-      || b.nextTurnGap - a.nextTurnGap
-      || b.baseValue - a.baseValue
-      || b.player.projectedPoints - a.player.projectedPoints);
+    candidates.sort((a, b) => {
+      if (state.policy === "lookahead") {
+        return b.lineupCeiling - a.lineupCeiling
+          || Number(b.likelyGone) - Number(a.likelyGone)
+          || b.nextTurnGap - a.nextTurnGap
+          || b.baseValue - a.baseValue
+          || b.player.projectedPoints - a.player.projectedPoints;
+      }
+      return b.immediateValue - a.immediateValue
+        || b.baseValue - a.baseValue
+        || Number(b.likelyGone) - Number(a.likelyGone)
+        || b.nextTurnGap - a.nextTurnGap
+        || b.player.projectedPoints - a.player.projectedPoints;
+    });
     candidates.forEach((candidate, index) => { candidate.rank = index + 1; });
     return { candidates, byId: new Map(candidates.map((candidate) => [candidate.player.id, candidate])), currentPick, decisionPick, nextTurn, opponentPicks, onClock, metrics };
   }
@@ -430,6 +442,11 @@
       savePicks();
       render();
     });
+    $("policySelect").addEventListener("change", (event) => {
+      state.policy = event.target.value;
+      savePicks();
+      render();
+    });
     $("rankingsBody").addEventListener("click", (event) => {
       const button = event.target.closest("button[data-action]");
       if (!button) {
@@ -472,6 +489,7 @@
     $("slotInput").max = state.teams;
     $("slotInput").value = state.draftSlot;
     $("scenarioSelect").value = state.scenario;
+    $("policySelect").value = state.policy;
     $("seasonLabel").textContent = `${data.projectionSeason} validation season`;
     $("modelStatus").textContent = `${data.scoring} · development model`;
     $("methodLabel").textContent = `${data.scope}. Recommendations combine game-level forecasts, format-derived replacement value, your roster, and the projected pool at your next snake turn; this remains a ${data.projectionSeason} out-of-sample validation board, not a live ${new Date().getFullYear()} preseason ranking.`;
