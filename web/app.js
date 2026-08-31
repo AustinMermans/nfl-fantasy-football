@@ -25,9 +25,13 @@
   })[char]);
 
   const positionClass = (position) => `position position-${position.toLowerCase()}`;
-  const scoreStats = (stats) => Object.entries(state.scoring)
-    .reduce((total, [field, weight]) => total + Number(stats?.[field] || 0) * Number(weight), 0);
-  const pointsFor = (player) => Number.isFinite(player?._points) ? player._points : scoreStats(player?.stats);
+  const pointsFor = (player) => {
+    if (Number.isFinite(player?._points)) return player._points;
+    return Number(player?.projectedPoints || 0)
+      + (Number(state.scoring.receptions) - Number(baseScoring.receptions || 0)) * Number(player?.stats?.receptions || 0)
+      + (Number(state.scoring.passing_tds) - Number(baseScoring.passing_tds || 0)) * Number(player?.stats?.passing_tds || 0)
+      + (Number(state.scoring.passing_interceptions) - Number(baseScoring.passing_interceptions || 0)) * Number(player?.stats?.passing_interceptions || 0);
+  };
   const gamePointsFor = (game) => Number(game?.projectedPoints || 0)
     + (Number(state.scoring.receptions) - Number(baseScoring.receptions || 0)) * Number(game?.stats?.receptions || 0)
     + (Number(state.scoring.passing_tds) - Number(baseScoring.passing_tds || 0)) * Number(game?.stats?.passing_tds || 0)
