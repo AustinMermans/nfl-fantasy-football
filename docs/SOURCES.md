@@ -14,14 +14,24 @@ stats update daily during the season, rosters update daily, and snap counts are
 polled multiple times per day. The project retains source attribution required
 by nflverse and upstream providers.
 
+## Shadow-deployed market inputs
+
+- [Kalshi historical data API](https://docs.kalshi.com/getting_started/historical_data): public series discovery plus partitioned live/historical markets and candlesticks.
+- [Polymarket market-data API](https://docs.polymarket.com/market-data/overview): NFL-tagged event metadata and CLOB price history.
+
+Both connectors are implemented, point-in-time constrained, and available to
+the opt-in `player_market` layer. They are not active official forecast features.
+The August 31, 2026 audit found 3,584 Kalshi passing-yard, 4,746 rushing-yard,
+and 10,376 receiving-yard catalog contracts, all with history beginning October
+6, 2025. Polymarket exposed 948 recognized anytime-touchdown contracts from
+September 2024 onward, but only one recognized passing-yard contract. Catalog
+counts precede player/game mapping, liquidity filters, and common-support tests.
+
 ## Candidate shorter-history inputs
 
 - [NFL Next Gen Stats via nflverse](https://github.com/nflverse/nflverse-data/releases/tag/nextgen_stats): passing, rushing, and receiving data from 2016 with minimum-volume publication thresholds.
 - nflverse advanced passing/rushing/receiving statistics and FTN charting.
-- [Kalshi event candlesticks](https://docs.kalshi.com/api-reference/events/get-event-candlesticks): timestamped price, bid/ask, volume, and open-interest histories.
-- [Polymarket developer API](https://docs.polymarket.com/): market metadata and CLOB price history.
 
-Kalshi and Polymarket coverage is not assumed. An availability audit must first
-measure NFL player-prop history, stable player/stat identifiers, liquidity, and
-the fraction of fantasy-relevant player-games with a usable pre-kickoff quote.
-
+Further admission work must measure stable player/game identifier matches,
+liquidity, and the fraction of fantasy-relevant player-games with a usable
+pre-kickoff quote.

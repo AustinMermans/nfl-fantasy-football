@@ -89,8 +89,29 @@ E50, E90, Emax, and the Murphy Brier decomposition are diagnostics.
 ## Prediction markets
 
 Closing NFL spread and total from nflverse are the first market benchmark.
-Kalshi and Polymarket player props are a separate short-history research layer.
-Each quote must carry market, player, stat, line, source timestamp, kickoff, and
-liquidity fields; only the final quote before kickoff is eligible. Market models
-will be evaluated on the identical common-support player-games against the core
-model, so missing or newly launched props cannot create a false improvement.
+Kalshi and Polymarket are now deployed as read-only shadow feeds. Discovery uses
+Kalshi's series/live/historical endpoints and Polymarket's NFL tag plus CLOB
+price histories. Recognized contracts are normalized to market, game, player,
+stat, threshold, source timestamp, kickoff, bid/ask, volume, and open interest.
+Only the final valid quote strictly before kickoff is eligible.
+
+Alternate thresholds remain separate through the point-in-time filter. Within
+each source, the over-probability ladder is made non-increasing and interpolated
+at 50% to estimate a market-implied median. Source medians are then combined by
+median, with source count, quote count, volume, quote age, and maximum spread
+retained as quality features. This avoids treating one thin contract or one
+exchange as consensus.
+
+The `player_market` feature family is opt-in and currently shadow-only. Before
+predictive comparison, a coverage gate requires at least 100 mapped player-games
+in each of three development seasons by default. A promoted layer must then
+improve expanding-window predictions on the identical common-support rows,
+exceed the random-feature benchmark, and survive Holm correction. Missing-market
+indicators cannot create a false improvement by changing the evaluation sample.
+
+The August 31, 2026 catalog audit found Kalshi histories beginning October 6,
+2025 for passing, rushing, and receiving-yard contracts. That is after the
+2012-2024 development window and overlaps the locked 2025 holdout. Polymarket
+contains a longer anytime-touchdown catalog but only one recognized 2024
+passing-yard contract. These sources therefore cannot yet be used to tune the
+official model without violating the holdout design.

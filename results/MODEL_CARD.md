@@ -48,7 +48,24 @@ The raw table ranks market context first for most targets, but deployment uses
 the simpler context model unless the market-layer improvement survives Holm
 correction across all 11 targets. Closing spread/total passes that gate only for
 receiving yards (`p_adj=0.0045`), receiving touchdowns (`0.0126`), and rushing
-touchdowns (`0.0127`). Kalshi and Polymarket are not yet deployed.
+touchdowns (`0.0127`). Kalshi and Polymarket are deployed as shadow data feeds,
+not as official projection features.
+
+The shadow layer now includes public catalog discovery, live/historical
+pagination, Kalshi candlestick and Polymarket CLOB normalization, strict
+pre-kickoff selection, bid/ask and liquidity diagnostics, alternate-line
+market-implied medians, and an opt-in `player_market` feature family. The August
+31, 2026 audit found 3,584 Kalshi passing-yard, 4,746 rushing-yard, and 10,376
+receiving-yard contracts, with history beginning October 6, 2025. Polymarket
+had 948 recognized anytime-touchdown contracts from September 2024 onward, but
+only one recognized passing-yard contract. These are catalog counts before
+player/game mapping and quote-quality filters.
+
+No market-prop coefficient or blend weight has been fit. Kalshi begins after the
+2012-2024 development window and overlaps the locked 2025 holdout; using it for
+selection now would contaminate the final test. Polymarket's 2024 yardage sample
+is too sparse. The official model therefore remains unchanged while the feeds
+collect forward shadow predictions.
 
 Every context forecast is opponent-aware. It includes the opposing defense's
 strictly lagged eight-game allowance for the target statistic and position,
@@ -111,8 +128,9 @@ cross-fold grouped improvement exceeds the screened subset.
   snapshots are preferable for live-production auditability.
 - Rookie priors, coaching changes, offensive line quality, depth-chart movement,
   and player transactions are not yet modeled explicitly.
-- NGS, advanced charting, Kalshi, and Polymarket require common-support studies
-  because their histories are shorter and selectively observed.
+- NGS and advanced charting require common-support studies. Kalshi and
+  Polymarket connectors are in shadow mode but still require mapped,
+  liquidity-filtered common-support studies before model admission.
 - Individual defensive statistics and team D/ST are not yet modeled.
 - Kicker single-game ranking is weak. A team-implied-points layer has a modest
   grouped improvement but fails the individual-field multiple-testing gate.
@@ -122,7 +140,8 @@ cross-fold grouped improvement exceeds the screened subset.
 ## Deployment gates
 
 1. Run point-in-time audits for injuries, rosters, and player props.
-2. Finish shorter-history NGS, charting, and player-prop common-support studies.
+2. Accumulate and map shadow player-prop quotes, then finish their common-support
+   and incremental-value studies alongside NGS and charting.
 3. Freeze the model and calibration manifest.
 4. Open the 2025 holdout once and report every metric without further tuning.
 5. Add league scoring, simulate correlated player outcomes, then optimize the draft.

@@ -13,6 +13,17 @@ from .evaluation import BacktestSpec, summarize_backtest, walk_forward_backtest
 from .factor_study import screen_context_factors
 from .features import build_features
 from .fantasy import build_fantasy_point_predictions, evaluate_fantasy_points
+from .market import (
+    KALSHI_PLAYER_SERIES,
+    kalshi_historical_markets,
+    kalshi_live_markets,
+    kalshi_player_market_catalog,
+    kalshi_series,
+    market_admission_audit,
+    market_consensus_features,
+    polymarket_events,
+    polymarket_player_market_catalog,
+)
 from .participation import summarize_participation, walk_forward_participation
 
 
@@ -143,6 +154,93 @@ def _fantasy_evaluation(args: argparse.Namespace) -> None:
     print(summary.to_string(index=False))
 
 
+def _market_catalog_audit(args: argparse.Namespace) -> None:
+    metadata = {str(item["ticker"]): item for item in kalshi_series()}
+    rows: list[dict[str, object]] = []
+    for ticker in args.kalshi_series:
+        historical = kalshi_historical_markets(
+            series_ticker=ticker, max_pages=args.kalshi_pages
+        )
+        live = kalshi_live_markets(series_ticker=ticker, max_pages=1)
+        markets = {
+            str(item.get("ticker")): item for item in [*historical, *live]
+        }.values()
+        catalog = kalshi_player_market_catalog(markets, series_ticker=ticker)
+        item = metadata.get(ticker, {})
+        rows.append(
+            {
+                "source": "kalshi",
+                "series": ticker,
+                "stat_type": KALSHI_PLAYER_SERIES.get(ticker),
+                "catalog_markets": len(catalog),
+                "first_open": catalog["open_time"].min() if not catalog.empty else None,
+                "last_close": catalog["close_time"].max() if not catalog.empty else None,
+                "catalog_volume": float(catalog["volume"].fillna(0).sum())
+                if not catalog.empty
+                else 0.0,
+                "series_volume": pd.to_numeric(
+                    item.get("volume_fp"), errors="coerce"
+                ),
+                "history_pages_requested": args.kalshi_pages,
+                "stage": "shadow",
+            }
+        )
+
+    events = [
+        *polymarket_events(closed=True, max_pages=args.polymarket_pages),
+        *polymarket_events(closed=False, max_pages=1),
+    ]
+    polymarket = polymarket_player_market_catalog(events)
+    if not polymarket.empty:
+        for stat_type, group in polymarket.groupby("stat_type"):
+            rows.append(
+                {
+                    "source": "polymarket",
+                    "series": "NFL tag 450",
+                    "stat_type": stat_type,
+                    "catalog_markets": int(group["market_id"].nunique()),
+                    "first_open": group["open_time"].min(),
+                    "last_close": group["close_time"].max(),
+                    "catalog_volume": float(group["volume"].fillna(0).sum()),
+                    "series_volume": float("nan"),
+                    "history_pages_requested": args.polymarket_pages,
+                    "stage": "shadow",
+                }
+            )
+
+    output = pd.DataFrame(rows).sort_values(["source", "stat_type"])
+    destination = PROJECT_ROOT / "results" / "market_catalog_audit.csv"
+    destination.parent.mkdir(exist_ok=True)
+    output.to_csv(destination, index=False)
+    print(output.to_string(index=False))
+    print(f"wrote catalog audit to {destination}")
+
+
+def _market_feature_audit(args: argparse.Namespace) -> None:
+    config = load_config()
+    source = Path(args.quotes)
+    quotes = (
+        pd.read_parquet(source)
+        if source.suffix.lower() == ".parquet"
+        else pd.read_csv(source)
+    )
+    player_games = pd.read_parquet(
+        PROJECT_ROOT / "data" / "processed" / "player_games.parquet"
+    )
+    features = market_consensus_features(quotes)
+    audit = market_admission_audit(
+        features,
+        player_games,
+        development_end_season=config.development_end_season,
+        minimum_seasons=args.minimum_seasons,
+        minimum_rows_per_season=args.minimum_rows_per_season,
+    )
+    results = PROJECT_ROOT / "results"
+    features.to_parquet(results / "market_features.parquet", index=False)
+    audit.to_csv(results / "market_admission_audit.csv", index=False)
+    print(audit.to_string(index=False))
+
+
 def _draft_board(args: argparse.Namespace) -> None:
     destination = export_draft_board(season=args.season)
     print(f"wrote draft-board projections to {destination}")
@@ -180,6 +278,20 @@ def build_parser() -> argparse.ArgumentParser:
     factors.set_defaults(handler=_factor_study)
     fantasy = commands.add_parser("fantasy-evaluation")
     fantasy.set_defaults(handler=_fantasy_evaluation)
+    market_catalog = commands.add_parser("market-catalog-audit")
+    market_catalog.add_argument(
+        "--kalshi-series",
+        nargs="+",
+        default=["KXNFLPASSYDS", "KXNFLRSHYDS", "KXNFLRECYDS"],
+    )
+    market_catalog.add_argument("--kalshi-pages", type=int, default=25)
+    market_catalog.add_argument("--polymarket-pages", type=int, default=25)
+    market_catalog.set_defaults(handler=_market_catalog_audit)
+    market_features = commands.add_parser("market-feature-audit")
+    market_features.add_argument("--quotes", required=True)
+    market_features.add_argument("--minimum-seasons", type=int, default=3)
+    market_features.add_argument("--minimum-rows-per-season", type=int, default=100)
+    market_features.set_defaults(handler=_market_feature_audit)
     draft_board = commands.add_parser("draft-board")
     draft_board.add_argument("--season", type=int)
     draft_board.set_defaults(handler=_draft_board)

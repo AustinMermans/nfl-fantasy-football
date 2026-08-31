@@ -31,6 +31,8 @@ nfl-fantasy calibration-backtest
 nfl-fantasy backtest
 nfl-fantasy factor-study
 nfl-fantasy fantasy-evaluation
+nfl-fantasy market-catalog-audit
+nfl-fantasy market-feature-audit --quotes path/to/canonical_quotes.parquet
 nfl-fantasy draft-board
 python -m pytest
 ```
@@ -38,6 +40,21 @@ python -m pytest
 Raw nflverse assets are cached under `data/raw/` and ignored by Git. Generated
 development reports are written under `results/`. Do not use
 `--include-holdout` during feature or model iteration.
+
+## Player markets
+
+Kalshi and Polymarket are wired as public, read-only shadow sources. The market
+layer discovers NFL products, paginates live and archived catalogs, converts
+Kalshi candlesticks and Polymarket CLOB histories to one quote schema, rejects
+post-kickoff quotes, and builds source-robust medians from alternate-line
+ladders. Run `nfl-fantasy market-catalog-audit` to refresh source coverage.
+
+The opt-in `player_market` feature set is not used by the published projections
+yet. `market-feature-audit` requires mapped canonical quotes and enforces a
+minimum common-support history before predictive testing. Promotion still
+requires an expanding-window improvement over the same player-games, the random
+feature threshold, and Holm correction. This prevents a short or selectively
+available prop history from masquerading as model improvement.
 
 ## Draft board
 

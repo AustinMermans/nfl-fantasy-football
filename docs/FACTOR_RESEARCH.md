@@ -43,6 +43,7 @@ was applied across all 11 component targets.
 | Interceptions | 0.00014 | 0.47586 | 0.95172 | Reject |
 | Rushing yards | -0.00023 | 0.50679 | 0.95172 | Reject |
 
-The current market layer contains consensus closing spread and total, not
-Kalshi or Polymarket player props. Prediction-market props require their own
+The official market layer contains consensus closing spread and total. Kalshi
+and Polymarket player props are implemented as a shadow `player_market` layer
+but are not admitted official features. Prediction-market props require their own
 common-support and liquidity screen before entering this table.

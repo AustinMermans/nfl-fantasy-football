@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 
 from .data import STAT_COLUMNS
+from .market import market_feature_columns
 
 
 HISTORY_COLUMNS = (
@@ -181,6 +182,7 @@ def feature_sets(target: str) -> dict[str, list[str]]:
         "team_implied_points",
         "opponent_implied_points",
     ]
+    player_market = market + market_feature_columns(target)
     admitted = {
         "passing_yards": [],
         "rushing_yards": ["opponent_rushing_yards_ewm8", "week"],
@@ -197,5 +199,6 @@ def feature_sets(target: str) -> dict[str, list[str]]:
         "workload": workload,
         "context": context,
         "market_context": market,
+        "player_market": player_market,
         "screened": screened,
     }
