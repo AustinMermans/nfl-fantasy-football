@@ -50,6 +50,13 @@ correction across all 11 targets. Closing spread/total passes that gate only for
 receiving yards (`p_adj=0.0045`), receiving touchdowns (`0.0126`), and rushing
 touchdowns (`0.0127`). Kalshi and Polymarket are not yet deployed.
 
+Every context forecast is opponent-aware. It includes the opposing defense's
+strictly lagged eight-game allowance for the target statistic and position,
+along with venue, rest, weather, surface, injury, and workload context. The
+admitted market layer also includes closing spread, game total, and team and
+opponent implied points. This is game-level matchup modeling; it is not yet a
+fantasy-roster H2H simulator or matchup win-probability model.
+
 The expanded field study adds completions, all two-point conversions, lost
 fumbles, special-teams touchdowns, PATs, and six field-goal distance buckets.
 Learned models improve development RMSE for every new field except PAT makes and
@@ -66,8 +73,10 @@ single-game level.
 The generated draft board aggregates those game-level forecasts by player for
 the 2024 validation season. It reports projected season points, points per game,
 position rank, model lift versus recent form, and the selected component-stat
-forecasts. The board deliberately labels the season and development status to
-avoid presenting retrospective validation output as a live forecast.
+forecasts. Each player expands to the underlying weekly opponent, fantasy-point,
+and position-relevant component forecasts. The board deliberately labels the
+season and development status to avoid presenting retrospective validation
+output as a live forecast.
 
 ## Factor screen
 

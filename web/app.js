@@ -70,6 +70,65 @@
     `).join("");
   }
 
+  function gameColumns(position) {
+    const columns = {
+      QB: [["Pass yd", "passing_yards"], ["Pass TD", "passing_tds"], ["INT", "passing_interceptions"], ["Rush yd", "rushing_yards"]],
+      RB: [["Rush yd", "rushing_yards"], ["Rush TD", "rushing_tds"], ["Rec yd", "receiving_yards"], ["Rec TD", "receiving_tds"]],
+      WR: [["Rec yd", "receiving_yards"], ["Rec TD", "receiving_tds"], ["Rush yd", "rushing_yards"]],
+      TE: [["Rec yd", "receiving_yards"], ["Rec TD", "receiving_tds"]],
+      K: [["FGM", "field_goals_made"], ["PAT", "pat_made"]],
+    };
+    return columns[position] || columns.WR;
+  }
+
+  function gameStat(game, key) {
+    if (key === "field_goals_made") {
+      return ["fg_made_0_19", "fg_made_20_29", "fg_made_30_39", "fg_made_40_49", "fg_made_50_59", "fg_made_60_"]
+        .reduce((total, field) => total + Number(game.stats[field] || 0), 0);
+    }
+    return Number(game.stats[key] || 0);
+  }
+
+  function weeklyProjectionTable(player) {
+    const columns = gameColumns(player.position);
+    const headers = columns.map(([label]) => `<th class="number-cell">${label}</th>`).join("");
+    const rows = player.games.map((game) => `
+      <tr>
+        <td><strong>${game.week}</strong></td>
+        <td><span class="matchup-venue">${game.venue}</span> ${escapeHtml(game.opponent)}</td>
+        <td class="number-cell weekly-projection">${game.projectedPoints.toFixed(2)}</td>
+        <td class="number-cell actual-result">${game.actualPoints.toFixed(2)}</td>
+        ${columns.map(([, key]) => `<td class="number-cell">${gameStat(game, key).toFixed(1)}</td>`).join("")}
+      </tr>
+    `).join("");
+    return `
+      <div class="weekly-wrap">
+        <div class="detail-heading">
+          <div><strong>Game-by-game projections</strong><span>${data.projectionSeason} out-of-sample validation</span></div>
+          <small>Actual is shown only because this is a completed validation season.</small>
+        </div>
+        <div class="weekly-scroll">
+          <table class="weekly-table">
+            <thead><tr><th>Week</th><th>Matchup</th><th class="number-cell">Projected</th><th class="number-cell">Actual</th>${headers}</tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  function playerDetail(player) {
+    return `
+      <div class="player-detail">
+        <div class="season-components">
+          <span class="detail-label">Projected season components</span>
+          <div class="stat-grid">${statItems(player)}</div>
+        </div>
+        ${weeklyProjectionTable(player)}
+      </div>
+    `;
+  }
+
   function statusMarkup(player, status) {
     if (status === "mine") return '<span class="status-pill mine">My roster</span>';
     if (status === "other") return '<span class="status-pill taken">Taken</span>';
@@ -100,13 +159,13 @@
           <div class="row-actions">
             <button type="button" data-action="mine" data-id="${escapeHtml(player.id)}" title="Add to my roster" aria-label="Add ${escapeHtml(player.name)} to my roster"><i data-lucide="user-plus"></i></button>
             <button type="button" data-action="other" data-id="${escapeHtml(player.id)}" title="Mark drafted by someone else" aria-label="Mark ${escapeHtml(player.name)} drafted by someone else"><i data-lucide="user-x"></i></button>
-            <button type="button" data-action="expand" data-id="${escapeHtml(player.id)}" title="View component projections" aria-label="View ${escapeHtml(player.name)} component projections"><i data-lucide="${expanded ? "chevron-up" : "chevron-down"}"></i></button>
+            <button type="button" data-action="expand" data-id="${escapeHtml(player.id)}" title="View game-by-game projections" aria-label="View ${escapeHtml(player.name)} game-by-game projections" aria-expanded="${expanded}"><i data-lucide="${expanded ? "chevron-up" : "chevron-down"}"></i></button>
           </div>
         </td>
       </tr>
       ${expanded ? `
         <tr class="detail-row">
-          <td colspan="9"><div class="stat-grid">${statItems(player)}</div></td>
+          <td colspan="9">${playerDetail(player)}</td>
         </tr>
       ` : ""}
     `;
@@ -150,7 +209,13 @@
     });
     $("rankingsBody").addEventListener("click", (event) => {
       const button = event.target.closest("button[data-action]");
-      if (!button) return;
+      if (!button) {
+        const row = event.target.closest("tr.player-row[data-id]");
+        if (!row) return;
+        state.expanded = state.expanded === row.dataset.id ? null : row.dataset.id;
+        render();
+        return;
+      }
       const { action, id } = button.dataset;
       if (action === "expand") {
         state.expanded = state.expanded === id ? null : id;

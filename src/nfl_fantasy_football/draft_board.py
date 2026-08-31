@@ -28,6 +28,49 @@ DISPLAY_FIELDS = (
     "pat_made",
 )
 
+POSITION_DISPLAY_FIELDS = {
+    "QB": (
+        "passing_yards",
+        "passing_tds",
+        "passing_interceptions",
+        "rushing_yards",
+        "rushing_tds",
+    ),
+    "RB": (
+        "rushing_yards",
+        "rushing_tds",
+        "receiving_yards",
+        "receiving_tds",
+        "fumbles_lost_total",
+    ),
+    "WR": (
+        "receiving_yards",
+        "receiving_tds",
+        "rushing_yards",
+        "rushing_tds",
+        "fumbles_lost_total",
+    ),
+    "TE": ("receiving_yards", "receiving_tds", "fumbles_lost_total"),
+    "K": (
+        "fg_made_0_19",
+        "fg_made_20_29",
+        "fg_made_30_39",
+        "fg_made_40_49",
+        "fg_made_50_59",
+        "fg_made_60_",
+        "pat_made",
+    ),
+}
+
+
+def _number(value: object, digits: int = 1) -> float:
+    return round(float(0.0 if pd.isna(value) else value), digits)
+
+
+def _venue(game_id: str, team: str) -> str:
+    home_team = str(game_id).rsplit("_", maxsplit=1)[-1]
+    return "vs" if team == home_team else "at"
+
 
 def build_player_rankings(
     fantasy_predictions: pd.DataFrame,
@@ -72,6 +115,19 @@ def build_player_rankings(
         index="player_id", columns="target", values="predicted", aggfunc="sum"
     ).reset_index()
     totals = totals.merge(components, on="player_id", how="left")
+    game_components = selected.pivot_table(
+        index=["player_id", "game_id"],
+        columns="target",
+        values="predicted",
+        aggfunc="first",
+    ).reset_index()
+    game_predictions = fantasy.merge(
+        game_components, on=["player_id", "game_id"], how="left"
+    ).sort_values(["player_id", "week"])
+    games_by_player = {
+        player_id: player_games
+        for player_id, player_games in game_predictions.groupby("player_id")
+    }
 
     totals = totals.sort_values(
         ["projected_points", "points_per_game", "player_name"],
@@ -86,10 +142,28 @@ def build_player_rankings(
 
     rows: list[dict[str, object]] = []
     for row in totals.itertuples(index=False):
-        stats = {}
-        for field in DISPLAY_FIELDS:
-            value = getattr(row, field, 0.0)
-            stats[field] = round(float(0.0 if pd.isna(value) else value), 1)
+        stats = {
+            field: _number(getattr(row, field, 0.0)) for field in DISPLAY_FIELDS
+        }
+        game_rows = []
+        for game in games_by_player[row.player_id].itertuples(index=False):
+            game_stats = {
+                field: _number(getattr(game, field, 0.0))
+                for field in POSITION_DISPLAY_FIELDS.get(row.position, ())
+            }
+            game_rows.append(
+                {
+                    "week": int(game.week),
+                    "gameId": game.game_id,
+                    "team": game.team,
+                    "opponent": game.opponent_team,
+                    "venue": _venue(game.game_id, game.team),
+                    "projectedPoints": _number(game.predicted_fantasy_points, 2),
+                    "actualPoints": _number(game.actual_fantasy_points, 2),
+                    "baselinePoints": _number(game.baseline_fantasy_points, 2),
+                    "stats": game_stats,
+                }
+            )
         rows.append(
             {
                 "id": row.player_id,
@@ -103,6 +177,7 @@ def build_player_rankings(
                 "projectedGames": int(row.projected_games),
                 "modelLift": round(float(row.model_lift), 1),
                 "stats": stats,
+                "games": game_rows,
             }
         )
     return rows

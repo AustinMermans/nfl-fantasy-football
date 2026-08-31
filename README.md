@@ -43,8 +43,9 @@ development reports are written under `results/`. Do not use
 
 Run `nfl-fantasy draft-board`, then open `web/index.html`. The board shows the
 latest available out-of-sample development projections, supports search and
-position filters, and stores Mine/Taken actions and undo history in the local
-browser. It is a model-inspection view until a current-season production
+position filters, expands each player into opponent-aware game-by-game and
+component projections, and stores Mine/Taken actions and undo history in the
+local browser. It is a model-inspection view until a current-season production
 forecast and final league roster settings are available.
 
 The public GitHub Pages site contains only this draft-board interface. Pushes to
