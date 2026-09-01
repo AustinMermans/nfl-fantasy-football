@@ -6,13 +6,13 @@
   <meta name="color-scheme" content="light">
   <title>NFL Fantasy Draft Board</title>
   <link rel="preconnect" href="https://a.espncdn.com">
-  <link rel="stylesheet" href="styles.css?v=20260901-policy-v2">
+  <link rel="stylesheet" href="styles.css?v=20260901-policy-v3">
   <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
   <script src="projections.js?v=20260901-ros-v1"></script>
   <script src="market.js?v=20260901-market-v1"></script>
   <script src="sleeper.js?v=20260901-market-v1"></script>
-  <script src="draft-policy.js?v=20260901-policy-v1"></script>
-  <script src="app.js?v=20260901-policy-v2" defer></script>
+  <script src="draft-policy.js?v=20260901-policy-v3"></script>
+  <script src="app.js?v=20260901-policy-v3" defer></script>
 </head>
 <body>
   <div id="error" class="fatal" hidden></div>
@@ -104,7 +104,8 @@
         <label class="draft-only">
           <span>Recommendation policy</span>
           <select id="policySelect">
-            <option value="adp">Validated market ADP</option>
+            <option value="capped_adp">Validated capped market ADP</option>
+            <option value="adp">Market ADP control</option>
             <option value="lookahead">Experimental probability lookahead</option>
             <option value="roster">Experimental weekly roster value</option>
           </select>

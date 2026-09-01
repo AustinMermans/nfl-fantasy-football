@@ -30,12 +30,19 @@ class PolicyConfig:
     bench_weight: float
     lookahead: bool = True
     max_adp_reach: float | None = None
+    roster_profile: str = "league"
+    decision_rule: str = "utility"
+    timing_profile: str = "none"
 
     @property
     def name(self) -> str:
         reach = "" if self.max_adp_reach is None else f"_r{self.max_adp_reach:.1f}"
+        profile = "" if self.roster_profile == "league" else f"_c{self.roster_profile}"
+        rule = "" if self.decision_rule == "utility" else f"_d{self.decision_rule}"
+        timing = "" if self.timing_profile == "none" else f"_t{self.timing_profile}"
         return (
-            f"hybrid_w{self.model_weight:.2f}_b{self.bench_weight:.2f}{reach}_"
+            f"hybrid_w{self.model_weight:.2f}_b{self.bench_weight:.2f}"
+            f"{reach}{profile}{rule}{timing}_"
             f"{'lookahead' if self.lookahead else 'greedy'}"
         )
 
@@ -316,6 +323,118 @@ def _roster_utility(
     return starter_value + bench_weight * bench_option
 
 
+def _policy_maximums(
+    profile: str, league_maximums: Mapping[str, int]
+) -> dict[str, int]:
+    profiles = {
+        "league": {},
+        "one_qb_one_te": {"QB": 1, "TE": 1, "K": 1},
+        "one_qb_two_te": {"QB": 1, "TE": 2, "K": 1},
+        "two_qb_one_te": {"QB": 2, "TE": 1, "K": 1},
+        "two_qb_two_te": {"QB": 2, "TE": 2, "K": 1},
+    }
+    if profile not in profiles:
+        raise ValueError(f"unknown roster profile: {profile}")
+    maximums = dict(league_maximums)
+    for position, cap in profiles[profile].items():
+        maximums[position] = min(maximums[position], cap)
+    return maximums
+
+
+def _timing_eligible(
+    eligible: Sequence[dict[str, object]],
+    roster: Sequence[Mapping[str, object]],
+    *,
+    overall_pick: int,
+    teams: int,
+    rounds: int,
+    profile: str,
+) -> list[dict[str, object]]:
+    if profile == "none":
+        return list(eligible)
+    if profile not in {"last_k", "late_reserves"}:
+        raise ValueError(f"unknown timing profile: {profile}")
+    round_number = (overall_pick - 1) // teams + 1
+    counts = {
+        position: sum(player["position"] == position for player in roster)
+        for position in POSITIONS
+    }
+    backup_round = max(1, rounds - 6)
+    filtered = []
+    for player in eligible:
+        position = str(player["position"])
+        if position == "K" and round_number < rounds:
+            continue
+        if (
+            profile == "late_reserves"
+            and position in {"QB", "TE"}
+            and counts[position] >= 1
+            and round_number < backup_round
+        ):
+            continue
+        filtered.append(player)
+    return filtered or list(eligible)
+
+
+def _selected_lineup(
+    players: Sequence[dict[str, object]],
+    points_key: str,
+    roster_slots: Mapping[str, int],
+) -> list[dict[str, object]]:
+    """Select a legal lineup using information available before outcomes."""
+    selected: list[dict[str, object]] = []
+    selected_ids: set[str] = set()
+    for position in POSITIONS:
+        ordered = sorted(
+            (player for player in players if player["position"] == position),
+            key=lambda player: (
+                float(player[points_key]),
+                -float(player.get("adp", float("inf"))),
+            ),
+            reverse=True,
+        )
+        starters = ordered[: int(roster_slots[position])]
+        selected.extend(starters)
+        selected_ids.update(str(player["mfl_id"]) for player in starters)
+    flex = sorted(
+        (
+            player
+            for player in players
+            if player["position"] in FLEX_POSITIONS
+            and str(player["mfl_id"]) not in selected_ids
+        ),
+        key=lambda player: (
+            float(player[points_key]),
+            -float(player.get("adp", float("inf"))),
+        ),
+        reverse=True,
+    )[: int(roster_slots["FLEX"])]
+    selected.extend(flex)
+    return selected
+
+
+def _weekly_lineup_score(
+    roster: Sequence[dict[str, object]],
+    week: int,
+    *,
+    selection_key: str,
+    roster_slots: Mapping[str, int],
+    lineup_mode: str,
+) -> float:
+    weekly_roster = [
+        {
+            **player,
+            "week_points": float(player["actual_weekly"].get(week, 0.0)),
+        }
+        for player in roster
+        if week in player["actual_weekly"]
+    ]
+    if lineup_mode == "best_ball":
+        return lineup_value(weekly_roster, "week_points", roster_slots=roster_slots)
+    selected = _selected_lineup(weekly_roster, selection_key, roster_slots)
+    return float(sum(float(player["week_points"]) for player in selected))
+
+
 def _opponent_pick(
     available: Sequence[dict[str, object]],
     roster: Sequence[dict[str, object]],
@@ -364,15 +483,19 @@ def simulate_historical_draft(
     room_noise: float = 0.0,
     noise_seed: int = 0,
     lookahead_samples: int = 2,
+    lineup_mode: str = "managed",
 ) -> dict[str, object]:
-    """Draft against fixed roster-aware ADP opponents and score realized lineups."""
+    """Draft against roster-aware ADP opponents and score realized lineups."""
     if strategy not in {"adp", "hybrid"}:
         raise ValueError("strategy must be adp or hybrid")
+    if lineup_mode not in {"managed", "best_ball"}:
+        raise ValueError("lineup_mode must be managed or best_ball")
     if not 1 <= draft_slot <= teams:
         raise ValueError("draft_slot must be within the league")
     config = policy or PolicyConfig(model_weight=0.0, bench_weight=0.0, lookahead=False)
     slots = dict(roster_slots or DEFAULT_ROSTER_SLOTS)
     maximums = dict(roster_maximums or DEFAULT_ROSTER_MAXIMUMS)
+    managed_maximums = _policy_maximums(config.roster_profile, maximums)
     players = pool.copy()
     players["hybrid_points"] = (
         players["market_points"]
@@ -395,9 +518,21 @@ def simulate_historical_draft(
             roster,
             rounds=rounds,
             roster_slots=slots,
-            roster_maximums=maximums,
+            roster_maximums=managed_maximums,
+        )
+        eligible = _timing_eligible(
+            eligible,
+            roster,
+            overall_pick=overall_pick,
+            teams=teams,
+            rounds=rounds,
+            profile=config.timing_profile,
         )
         ordered_by_adp = sorted(eligible, key=lambda player: float(player["adp"]))
+        if config.decision_rule == "adp":
+            return ordered_by_adp[0]
+        if config.decision_rule != "utility":
+            raise ValueError(f"unknown decision rule: {config.decision_rule}")
         if config.max_adp_reach is not None:
             best_adp = float(ordered_by_adp[0]["adp"])
             shortlist = [
@@ -459,7 +594,15 @@ def simulate_historical_draft(
                     future_rosters[draft_slot],
                     rounds=rounds,
                     roster_slots=slots,
-                    roster_maximums=maximums,
+                    roster_maximums=managed_maximums,
+                )
+                partners = _timing_eligible(
+                    partners,
+                    future_rosters[draft_slot],
+                    overall_pick=next_turn,
+                    teams=teams,
+                    rounds=rounds,
+                    profile=config.timing_profile,
                 )
                 partner_shortlist = sorted(
                     partners, key=lambda player: float(player["adp"])
@@ -515,13 +658,18 @@ def simulate_historical_draft(
 
     weekly_scores: dict[int, dict[int, float]] = {team: {} for team in rosters}
     for team, roster in rosters.items():
+        selection_key = (
+            "hybrid_points"
+            if team == draft_slot and strategy == "hybrid"
+            else "market_points"
+        )
         for week in range(1, 18):
-            weekly_roster = [
-                {**player, "week_points": float(player["actual_weekly"].get(week, 0.0))}
-                for player in roster
-            ]
-            weekly_scores[team][week] = lineup_value(
-                weekly_roster, "week_points", roster_slots=slots
+            weekly_scores[team][week] = _weekly_lineup_score(
+                roster,
+                week,
+                selection_key=selection_key,
+                roster_slots=slots,
+                lineup_mode=lineup_mode,
             )
     comparisons = []
     for week in range(1, 15):
@@ -541,6 +689,7 @@ def simulate_historical_draft(
         "teams": teams,
         "draft_slot": draft_slot,
         "rounds": rounds,
+        "lineup_mode": lineup_mode,
         "room_noise": room_noise,
         "noise_seed": noise_seed,
         "policy": config.name if strategy == "hybrid" else "naive_adp",
@@ -570,6 +719,10 @@ def policy_grid(
     model_weights: Iterable[float] = (0.0, 0.25, 0.5, 0.75),
     bench_weights: Iterable[float] = (0.15,),
     adp_reaches: Iterable[float | None] = (None,),
+    roster_profiles: Iterable[str] = ("league",),
+    lookahead_values: Iterable[bool] = (False, True),
+    decision_rules: Iterable[str] = ("utility",),
+    timing_profiles: Iterable[str] = ("none",),
 ) -> tuple[PolicyConfig, ...]:
     return tuple(
         PolicyConfig(
@@ -577,9 +730,15 @@ def policy_grid(
             bench_weight=float(bench),
             lookahead=lookahead,
             max_adp_reach=None if reach is None else float(reach),
+            roster_profile=profile,
+            decision_rule=rule,
+            timing_profile=timing,
         )
         for model in model_weights
         for bench in bench_weights
         for reach in adp_reaches
-        for lookahead in (False, True)
+        for profile in roster_profiles
+        for rule in decision_rules
+        for timing in timing_profiles
+        for lookahead in lookahead_values
     )

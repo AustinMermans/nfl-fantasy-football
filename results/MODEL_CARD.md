@@ -165,53 +165,55 @@ positional multipliers have been removed.
 
 ### Draft-policy validation
 
-The draft policy now has a genuine preseason historical benchmark. Public
-MyFantasyLeague AUG15 ADP was collected for 2018-2024 at 8, 10, 12, and 14
-teams, with Standard/PPR ranks interpolated to half PPR. Frozen Week-0 model
-forecasts were joined without opening the 2025 player-model holdout. Opponents
-used one fixed, legal roster-aware ADP policy in every treatment. Drafted rosters
-were scored with realized best legal weekly lineups, Weeks 1-17, and pairwise
-H2H win rates through Week 14.
+Public MyFantasyLeague AUG15 ADP was collected for 2018-2025 at 8, 10, 12, and
+14 teams, with Standard/PPR ranks interpolated to half PPR. Opponents draft from
+legal ADP with reproducible normal rank shocks that widen from roughly 3 picks
+early to 13 at pick 100, capped at 20. Control and candidate share each realized
+room draw.
 
-Policy choices were selected on 2019-2023 and evaluated once on 2024. All four
-development winners used `0.0` model weight, indicating that the forecast did
-not add draft-order information beyond the market even before the holdout.
+The original retrospective evaluator selected the highest realized scorer from
+each roster every week. That leaked outcomes and was best-ball evaluation, not
+managed lineups. Its reported policy deltas are superseded. The corrected
+evaluator freezes a preseason selection score, chooses each legal weekly lineup
+from that score, and only then applies realized Week 1-17 points. Pairwise H2H
+uses Weeks 1-14.
 
-| Teams | Selected candidate | ADP H2H | Candidate H2H | Delta | Point delta |
-|--:|:--|--:|--:|--:|--:|
-| 8 | Market points + lookahead | 0.5000 | 0.4349 | -0.0651 | -48.02 |
-| 10 | Market points + lookahead | 0.5000 | 0.3730 | -0.1270 | -131.31 |
-| 12 | Market points + greedy roster | 0.5000 | 0.3534 | -0.1466 | -188.81 |
-| 14 | Market points + greedy roster | 0.5000 | 0.3348 | -0.1652 | -213.19 |
+Forecast weights, unconstrained roster utility, ADP-reach guardrails, and
+probability lookahead all failed against ADP after the correction. The only
+promoted intervention retains exact market order while capping the roster at
+two QBs, two TEs, and one kicker. RB and WR retain the league maxima and every
+pick must preserve a legal finish. In 10-team rooms this reallocates about 1.6
+picks from surplus QB/TE/K depth to RB/WR.
 
-No candidate passed the promotion gate. The production board therefore defaults
-to legal market ADP rather than forecast value or probability lookahead. ESPN is
-the default room prior for an ESPN draft; current Sleeper half-PPR ADP and an
-ESPN/Sleeper consensus are available as live comparisons. Sleeper is not claimed
-as a historical baseline because its public interface does not expose the same
-complete league-size series.
+Rolling-origin 10-team candidate-minus-ADP results were:
 
-A follow-up tested whether draft theory could improve ADP without relying on the
-player forecast. Candidate choices used market-implied points, roster utility,
-and optional next-turn lookahead, but could reach only 2, 4, or 8 picks beyond
-the best legal ADP. Guardrails and lookahead were selected on 2019-2023.
+| Season | H2H delta | Managed-point delta |
+|--:|--:|--:|
+| 2020 | +0.0040 | +7.06 |
+| 2021 | -0.0014 | +2.74 |
+| 2022 | +0.0087 | +10.75 |
+| 2023 | +0.0153 | +20.85 |
+| 2024 | +0.0075 | +16.28 |
+| 2025 | +0.0020 | +6.28 |
 
-| Teams | Fixed-room H2H delta | Noisy-room H2H delta | Noisy point delta |
-|--:|--:|--:|--:|
-| 8 | -0.0217 | -0.0093 | -14.50 |
-| 10 | -0.0294 | -0.0094 | -8.52 |
-| 12 | -0.0292 | -0.0351 | -41.40 |
-| 14 | -0.1064 | -0.0005 | +10.90 |
+The six-year mean H2H delta is `+0.0060`; its two-sided year-level 95% interval
+is approximately `[-0.0001, +0.0122]`. Mean managed points improve by `+10.66`,
+interval `[+3.54, +17.78]`. The H2H result is directionally consistent but
+borderline under a two-sided test.
 
-Noisy opponents received reproducible ADP shocks that grew from about 3 picks
-early to 13 picks around pick 100, capped at 20. The baseline and candidate saw
-identical realized rooms, while the candidate's lookahead used independent
-shocks. The 2024 noisy holdout used eight room repetitions per slot. None of the
-four H2H deltas was positive; only the 12-team loss excluded zero under a
-slot-clustered approximate 95% interval. The 14-team point gain was uncertain
-and did not improve H2H. This narrows the earlier failure to the decision layer:
-the tested roster and availability heuristics have not beaten legal ADP even
-when player values come directly from the market.
+The frozen 2025 cross-size test used 20 noisy rooms per slot:
+
+| Teams | ADP H2H | Capped ADP H2H | H2H delta | Point delta |
+|--:|--:|--:|--:|--:|
+| 8 | 0.5389 | 0.5396 | +0.0007 | -4.90 |
+| 10 | 0.5315 | 0.5323 | +0.0008 | +2.21 |
+| 12 | 0.5004 | 0.5081 | +0.0077 | +12.28 |
+| 14 | 0.5249 | 0.5301 | +0.0052 | +7.05 |
+
+The 12-team slot-clustered intervals exclude zero for H2H and points. The 8-
+and 10-team single-season effects are small and uncertain. The production board
+therefore describes capped ADP as the best tested policy, not a global optimum,
+and keeps uncapped market ADP selectable as the control.
 
 The experimental live layer evaluates the available pool, inferred opponent
 rosters, the user's roster, snake slot, and picks until the next turn. ESPN ADP and the
@@ -297,11 +299,10 @@ cross-fold grouped improvement exceeds the screened subset.
   dependence, head-to-head win probability, and championship objectives remain
   absent. The injury approximation has not yet passed a rolling-origin
   calibration study and should not be interpreted as a medical forecast.
-- The validated baseline uses aggregate MFL ADP rather than raw, timestamped
-  manager-level draft sequences. Opponent behavior is fixed, waiver/trade and
-  playoff outcomes are absent, and one 2024 holdout is too small to establish
-  universal optimality. The result supports market ADP as the current default;
-  it does not prove the market cannot be beaten.
+- The policy test uses aggregate MFL ADP rather than raw, timestamped manager
+  sequences. Opponent deviations are simulated, waiver/trade and playoff
+  outcomes are absent, and several cross-size estimates remain imprecise. The
+  capped-ADP edge does not establish universal optimality.
 - The ROS empirical-Bayes weights are declared priors, not yet selected in a
   nested historical rest-of-season backtest. The next research gate is
   rolling-origin error and calibration by position and week of season.

@@ -354,6 +354,10 @@ def _draft_policy_backtest(args: argparse.Namespace) -> None:
         model_weights=args.model_weights,
         bench_weights=args.bench_weights,
         adp_reaches=args.adp_reaches or [None],
+        roster_profiles=args.roster_profiles,
+        lookahead_values=[mode == "lookahead" for mode in args.policy_modes],
+        decision_rules=args.decision_rules,
+        timing_profiles=args.timing_profiles,
     )
     development_rows: list[dict[str, object]] = []
     baseline_rows: list[dict[str, object]] = []
@@ -385,6 +389,7 @@ def _draft_policy_backtest(args: argparse.Namespace) -> None:
                         room_noise=args.room_noise,
                         noise_seed=noise_seed,
                         lookahead_samples=args.lookahead_samples,
+                        lineup_mode=args.lineup_mode,
                     )
                     baseline_rows.append(
                         {
@@ -405,6 +410,7 @@ def _draft_policy_backtest(args: argparse.Namespace) -> None:
                             room_noise=args.room_noise,
                             noise_seed=noise_seed,
                             lookahead_samples=args.lookahead_samples,
+                            lineup_mode=args.lineup_mode,
                         )
                         development_rows.append(
                             {
@@ -416,6 +422,9 @@ def _draft_policy_backtest(args: argparse.Namespace) -> None:
                                 "bench_weight": config.bench_weight,
                                 "lookahead": config.lookahead,
                                 "max_adp_reach": config.max_adp_reach,
+                                "roster_profile": config.roster_profile,
+                                "decision_rule": config.decision_rule,
+                                "timing_profile": config.timing_profile,
                             }
                         )
 
@@ -429,6 +438,9 @@ def _draft_policy_backtest(args: argparse.Namespace) -> None:
                 "bench_weight",
                 "lookahead",
                 "max_adp_reach",
+                "roster_profile",
+                "decision_rule",
+                "timing_profile",
             ],
             as_index=False,
             dropna=False,
@@ -469,6 +481,7 @@ def _draft_policy_backtest(args: argparse.Namespace) -> None:
                         room_noise=args.room_noise,
                         noise_seed=noise_seed,
                         lookahead_samples=args.lookahead_samples,
+                        lineup_mode=args.lineup_mode,
                     )
                     holdout_rows.append(
                         {
@@ -481,6 +494,15 @@ def _draft_policy_backtest(args: argparse.Namespace) -> None:
                             "lookahead": config.lookahead if policy else False,
                             "max_adp_reach": (
                                 config.max_adp_reach if policy is not None else 0.0
+                            ),
+                            "roster_profile": (
+                                config.roster_profile if policy else "league"
+                            ),
+                            "decision_rule": (
+                                config.decision_rule if policy else "adp"
+                            ),
+                            "timing_profile": (
+                                config.timing_profile if policy else "none"
                             ),
                         }
                     )
@@ -658,6 +680,39 @@ def build_parser() -> argparse.ArgumentParser:
     policy_backtest.add_argument("--holdout-repetitions", type=int, default=1)
     policy_backtest.add_argument("--lookahead-samples", type=int, default=2)
     policy_backtest.add_argument("--adp-reaches", nargs="+", type=float)
+    policy_backtest.add_argument(
+        "--roster-profiles",
+        nargs="+",
+        choices=[
+            "league",
+            "one_qb_one_te",
+            "one_qb_two_te",
+            "two_qb_one_te",
+            "two_qb_two_te",
+        ],
+        default=["league"],
+    )
+    policy_backtest.add_argument(
+        "--lineup-mode", choices=["managed", "best_ball"], default="managed"
+    )
+    policy_backtest.add_argument(
+        "--policy-modes",
+        nargs="+",
+        choices=["greedy", "lookahead"],
+        default=["greedy", "lookahead"],
+    )
+    policy_backtest.add_argument(
+        "--decision-rules",
+        nargs="+",
+        choices=["adp", "utility"],
+        default=["utility"],
+    )
+    policy_backtest.add_argument(
+        "--timing-profiles",
+        nargs="+",
+        choices=["none", "last_k", "late_reserves"],
+        default=["none"],
+    )
     policy_backtest.add_argument("--output-suffix", default="")
     policy_backtest.set_defaults(handler=_draft_policy_backtest)
     preseason = commands.add_parser("preseason-forecast")

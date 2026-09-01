@@ -48,47 +48,53 @@ PPR. The policy pool joins those snapshots to frozen Week-0 model forecasts and
 realized weekly half-PPR points. Missing rookies and unmatched forecasts fall
 back to market-implied points rather than hindsight.
 
-Candidate weights and lookahead were selected on 2019-2023, then evaluated once
-on 2024. Every development winner assigned the player forecast zero weight. On
-the holdout, candidate minus ADP H2H win-rate deltas were `-0.0651`, `-0.1270`,
-`-0.1466`, and `-0.1652` for 8, 10, 12, and 14 teams. Managed-point deltas were
-`-48.02`, `-131.31`, `-188.81`, and `-213.19`. Therefore no candidate was
-promoted and the live board defaults to the legal market-order policy.
+The original evaluator chose the highest realized scorer from each roster every
+week. That is a best-ball oracle, not managed-lineup evaluation, and its earlier
+policy deltas are superseded. The corrected evaluator chooses a legal weekly
+lineup using only the frozen preseason selection score, then reveals that week's
+realized points. It cannot use the outcome to decide who started.
 
-A second experiment isolated draft theory from player forecasting. It gave the
-candidate market-implied player values, then limited each decision to players
-within 2, 4, or 8 ADP picks of the best legal player. The candidate could use
-roster utility and either greedy or next-turn lookahead only to choose inside
-that market guardrail. Development again covered 2019-2023 and selected the
-guardrail before the 2024 holdout was opened. In deterministic rooms, candidate
-minus ADP H2H deltas were `-0.0217`, `-0.0294`, `-0.0292`, and `-0.1064` for
-8, 10, 12, and 14 teams. No guarded policy passed.
+The corrected search first retested forecast weights, roster utility, ADP reach,
+and next-turn lookahead. Those flexible rules still failed in noisy 2025 rooms.
+The useful intervention was simpler: retain exact ADP ordering, preserve a legal
+finish, and cap the drafted roster at two QBs, two TEs, and one kicker. RB and WR
+continue to use the league maxima. The control uses the league maxima at every
+position. The caps moved about 1.6 picks per 10-team roster from surplus QB/TE/K
+depth to RB/WR without using the player forecast to reorder the market.
 
-The same guardrail selection was repeated with noisy opponents. At each pick,
-an opponent's ADP preference received a reproducible normal shock with a
-standard deviation of roughly 3 picks early, 8 at pick 50, and 13 at pick 100,
-capped at 20. Baseline and candidate faced the same realized shocks. Lookahead
-used independent shocks, preventing future-information leakage. Eight holdout
-room realizations were run per draft slot. Candidate minus ADP H2H deltas were
-`-0.0093`, `-0.0094`, `-0.0351`, and `-0.0005`; slot-clustered approximate 95%
-intervals were `[-0.0444, 0.0257]`, `[-0.0309, 0.0121]`,
-`[-0.0665, -0.0037]`, and `[-0.0248, 0.0237]`. The 14-team candidate gained
-10.90 season points on average, but its interval `[-24.68, 46.48]` crossed zero
-and H2H did not improve. This is no evidence of a deployable edge.
+This cap was selected in rolling origin using prior seasons only. In 10-team
+leagues, candidate-minus-control H2H deltas for 2020-2025 were `+0.0040`,
+`-0.0014`, `+0.0087`, `+0.0153`, `+0.0075`, and `+0.0020`; managed-point deltas
+were positive in all six years. The mean H2H delta was `+0.0060` with a two-sided
+year-level 95% interval of approximately `[-0.0001, +0.0122]`; the mean point
+delta was `+10.66`, interval `[+3.54, +17.78]`. The H2H evidence is promising
+but borderline, so the board exposes the uncapped control and does not call the
+cap universally optimal.
 
-H2H win rate uses each managed lineup against every other roster in Weeks 1-14;
-season points use managed legal lineups in Weeks 1-17. Averaging all draft slots
-makes the all-ADP league baseline exactly `0.500` by construction. This is a
-policy test, not evidence that a 0.500 team wins half of real leagues.
+The frozen 2025 cross-size test used 20 noisy rooms per draft slot. Results were:
+
+| Teams | ADP H2H | Capped ADP H2H | H2H delta | Point delta |
+|--:|--:|--:|--:|--:|
+| 8 | 0.5389 | 0.5396 | +0.0007 | -4.90 |
+| 10 | 0.5315 | 0.5323 | +0.0008 | +2.21 |
+| 12 | 0.5004 | 0.5081 | +0.0077 | +12.28 |
+| 14 | 0.5249 | 0.5301 | +0.0052 | +7.05 |
+
+The 12-team slot-clustered intervals excluded zero for both H2H and points. The
+8- and 10-team single-season differences were small and uncertain. H2H uses each
+preseason-selected weekly lineup against every other roster in Weeks 1-14;
+season points use the same managed lineups in Weeks 1-17. Opponent ADP receives
+a reproducible normal shock growing from roughly 3 picks early to 13 at pick
+100, capped at 20. Control and candidate share every realized room draw.
 
 ## Live pick policy
 
-The validated default takes the highest available ADP player from the selected
-room market while preserving a legal roster finish. ESPN is the default because
-the current league drafts on ESPN. Sleeper half-PPR ADP and an ESPN/Sleeper mean
-are selectable for rooms hosted elsewhere. The list is recalculated after every
-logged or edited pick, so unavailable players disappear and late-round position
-requirements can change the next legal selection.
+The default takes the highest available ADP player from the selected room market
+subject to `QB <= 2`, `TE <= 2`, `K <= 1`, the league's RB/WR limits, and the
+ability to finish every starter slot. It introduces no model-based reaches.
+ESPN, Sleeper half-PPR ADP, and their mean are selectable. The list recalculates
+after every logged or edited pick. Plain legal market ADP remains selectable as
+the control.
 
 The weekly-roster and probability-lookahead options below remain experimental
 diagnostics rather than the deployed optimum.
@@ -145,6 +151,32 @@ archetype from the resulting posterior, preserving uncertainty instead of
 switching abruptly after a recent-pick threshold. These priors and likelihood
 bonuses are declared assumptions pending historical draft-log calibration.
 
+## Research basis
+
+The formulation follows several results from the operations-research and
+decision-science literature:
+
+- Becker and Sun formulate fantasy roster decisions as mixed-integer programs
+  aimed at weekly matchup wins rather than raw point totals:
+  <https://doi.org/10.1515/jqas-2013-0009>.
+- Fry, Lundberg, and Ohlmann model the draft as a stochastic dynamic program and
+  use a deterministic approximation because the exact game tree is too large:
+  <https://iro.uiowa.edu/esploro/outputs/journalArticle/A-Player-Selection-Heuristic-for-a/9984380640402771>.
+- Lee and Liu's study of 1,350 Sleeper leagues finds that strategy performance
+  depends on competitors and that some less-common RB/WR-heavy roster
+  constructions outperform common constructions:
+  <https://www.cambridge.org/core/journals/judgment-and-decision-making/article/drafting-strategies-in-fantasy-football-a-study-of-competitive-sequential-human-decision-making/2AB841B3F446833348D784C0FC54DAD2>.
+- Matthews, Ramchurn, and Chalkiadakis describe fantasy decision-making as a
+  belief-state MDP with Bayesian reinforcement learning:
+  <https://ojs.aaai.org/index.php/AAAI/article/view/8259>.
+- Haugh and Singal show why opponent modeling and a stochastic outperform-the-
+  field objective matter in fantasy contests:
+  <https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3393127>.
+
+These papers motivate an eventual belief-state stochastic program. They do not
+validate this implementation. The production rule is deliberately the smallest
+intervention supported by this repository's historical evidence.
+
 ## Expert review consensus
 
 Five independent reviews covered rookie forecasting, football roles, Bayesian
@@ -173,8 +205,8 @@ Their convergent recommendations are:
 
 ## Validation gates
 
-Use frozen Week-0 snapshots for 2018-2024 and leave 2025 unopened until all
-player-model choices are frozen. Evaluate player distributions with CRPS, interval coverage,
+Use rolling-origin frozen Week-0 snapshots through 2025 and reserve 2026 as the
+next untouched policy season. Evaluate player distributions with CRPS, interval coverage,
 and joint energy/variogram scores. Evaluate survival with log loss, Brier score,
 ICI, slope/intercept, and false-wait/false-reach rates. Evaluate the complete
 policy with common-random-number regret versus roster-aware greedy, format VOR,
@@ -182,9 +214,10 @@ ADP/ECR, and a nondeployable outcome oracle.
 
 Future policy promotion requires a positive untouched-season win-rate delta
 against legal ADP, stability across league sizes and draft slots, and no material
-managed-points regression. The current candidate failed that first gate. Player
-feature promotion separately retains the expanding-window and placebo-feature
-requirements.
+managed-points regression. Capped ADP clears the directional gate but not a
+strong universal-significance claim; more point-in-time seasons and raw draft
+sequences are still required. Player-feature promotion separately retains the
+expanding-window and placebo-feature requirements.
 
 ## Injuries and starters
 

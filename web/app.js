@@ -4,10 +4,10 @@
   const data = window.NFL_DRAFT_DATA;
   const marketData = window.NFL_MARKET_DATA || { players: [] };
   const sleeperData = window.NFL_SLEEPER_MARKET || { players: [] };
-  const policyAudit = window.NFL_DRAFT_POLICY_AUDIT || { defaultPolicy: "adp", holdoutSeason: null };
-  const storageKey = "nfl-fantasy-draft-board-v7";
+  const policyAudit = window.NFL_DRAFT_POLICY_AUDIT || { defaultPolicy: "capped_adp", holdoutSeason: null };
+  const storageKey = "nfl-fantasy-draft-board-v8";
   const draftLibraryKey = "nfl-fantasy-draft-library-v1";
-  const previousStorageKey = "nfl-fantasy-draft-board-v6";
+  const previousStorageKey = "nfl-fantasy-draft-board-v7";
   const legacyStorageKey = "nfl-fantasy-draft-board-v1";
   const defaultConfig = data?.draftConfig || {
     teams: 10, draftSlot: 10, rosterSlots: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 2, K: 1 },
@@ -71,6 +71,7 @@
     if (state.marketSource === "consensus") return consensusRankFor(player, metrics);
     return espnRankFor(player, metrics);
   };
+  const isMarketPolicy = () => ["adp", "capped_adp"].includes(state.policy);
 
   const positionClass = (position) => `position position-${position.toLowerCase()}`;
   const rescoredProjectionFor = (player) => {
@@ -184,7 +185,9 @@
       const currentSaved = localStorage.getItem(storageKey);
       const saved = JSON.parse(currentSaved || localStorage.getItem(previousStorageKey));
       if (saved && Array.isArray(saved.picks)) {
-        applyDraftSnapshot(saved, Boolean(currentSaved));
+        applyDraftSnapshot(saved, true);
+        if (!currentSaved && saved.policy === "adp") state.policy = "capped_adp";
+        if (!currentSaved) savePicks();
         return;
       }
       const legacy = JSON.parse(localStorage.getItem(legacyStorageKey));
@@ -592,7 +595,7 @@
     const pointRanks = new Map([...data.players]
       .sort((a, b) => pointsFor(b) - pointsFor(a) || a.name.localeCompare(b.name))
       .map((player, index) => [player.id, index + 1]));
-    if (state.policy === "adp") {
+    if (isMarketPolicy()) {
       const rosterCapacity = Object.values(defaultConfig.rosterSlots).reduce((sum, value) => sum + Number(value), 0)
         + Number(defaultConfig.benchSlots || 4);
       const rosterCounts = myRoster.reduce((counts, player) => ({
@@ -600,12 +603,18 @@
       }), {});
       const currentRound = Math.floor((decisionPick - 1) / state.teams) + 1;
       const candidates = available.map((player) => {
-        const underPositionMaximum = (rosterCounts[player.position] || 0)
-          < Number(defaultConfig.rosterMaximums?.[player.position] || rosterCapacity);
+        const validatedCaps = { QB: 2, TE: 2, K: 1 };
+        const positionMaximum = state.policy === "capped_adp"
+          ? Math.min(
+            Number(defaultConfig.rosterMaximums?.[player.position] || rosterCapacity),
+            Number(validatedCaps[player.position] || rosterCapacity),
+          )
+          : Number(defaultConfig.rosterMaximums?.[player.position] || rosterCapacity);
+        const underPositionMaximum = (rosterCounts[player.position] || 0) < positionMaximum;
         const remainingAfterPick = Number(defaultConfig.rounds || 12) - myRoster.length - 1;
         const timingEligible = underPositionMaximum
           && starterDeficit([...myRoster, player]) <= remainingAfterPick
-          && (player.position !== "K" || currentRound >= Number(defaultConfig.rounds || 12));
+          && (state.policy === "capped_adp" || player.position !== "K" || currentRound >= Number(defaultConfig.rounds || 12));
         return {
           player,
           decisionValue: metrics.get(player.id).value,
@@ -973,7 +982,7 @@
       : recommendation?.immediateGain;
     const displayedRisk = isRos
       ? `${Number(player.restOfSeasonExpectedGames || 0).toFixed(1)}`
-      : state.policy === "adp" ? marketRankFor(player, recommendations.metrics).toFixed(1)
+      : isMarketPolicy() ? marketRankFor(player, recommendations.metrics).toFixed(1)
         : recommendation ? `${Math.round(displayedDraftValue * 100)}%` : "-";
     const actionsDisabled = status !== "available" || recommendations.draftComplete;
     return `
@@ -1002,7 +1011,7 @@
         <td class="number-cell actual-total actual-column">${Number(player.actualPoints || 0).toFixed(1)}</td>
         <td class="number-cell">${(projectedPoints / perGameDenominator).toFixed(2)}</td>
         <td class="number-cell draft-value" title="${isRos ? "Expected rest-of-season points over the format-derived replacement player" : "Expected managed weekly lineup points added to your current roster"}">${displayedGain == null ? "-" : `${displayedGain >= 0 ? "+" : ""}${displayedGain.toFixed(1)}`}</td>
-        <td class="number-cell draft-value" title="${isRos ? "Expected games available for the rest of the season" : state.policy === "adp" ? "Average draft position in the selected room market" : `Estimated probability of remaining available to pick #${recommendations.onClock ? recommendations.nextTurn : recommendations.decisionPick}`}">${displayedRisk}</td>
+        <td class="number-cell draft-value" title="${isRos ? "Expected games available for the rest of the season" : isMarketPolicy() ? "Average draft position in the selected room market" : `Estimated probability of remaining available to pick #${recommendations.onClock ? recommendations.nextTurn : recommendations.decisionPick}`}">${displayedRisk}</td>
         <td>${statusMarkup(player, status)}</td>
         <td class="actions-cell">
           <div class="row-actions">
@@ -1079,19 +1088,19 @@
     const bestRecommendation = best ? recommendations.byId.get(best.id) : null;
     $("bestHeading").textContent = recommendations.draftComplete ? "Draft complete" : recommendations.onClock ? "Pick now" : `Target for pick #${recommendations.decisionPick}`;
     $("bestName").textContent = recommendations.draftComplete ? "Roster locked" : best?.name || "No player available";
-    const pairNames = state.policy === "adp" ? "" : recommendations.recommendedPair.map((player) => player.name).join(" + ");
+    const pairNames = isMarketPolicy() ? "" : recommendations.recommendedPair.map((player) => player.name).join(" + ");
     $("bestMeta").textContent = pairNames
       ? `${recommendations.onClock ? "Recommended turn pair" : "Most frequent turn pair"} · ${pairNames}`
       : best ? `${best.position} · ${best.team} · ${scoringName()}` : "-";
     $("bestPoints").textContent = recommendations.draftComplete
       ? "-"
-      : state.policy === "adp" && best ? marketRankFor(best, recommendations.metrics).toFixed(1)
+      : isMarketPolicy() && best ? marketRankFor(best, recommendations.metrics).toFixed(1)
         : bestRecommendation ? `${Math.round(bestRecommendation.survivalProbability * 100)}%` : "-";
-    $("bestMetricLabel").textContent = state.policy === "adp"
+    $("bestMetricLabel").textContent = isMarketPolicy()
       ? "Market ADP"
       : recommendations.onClock ? "Return survival" : "Survival to my pick";
-    $("bestMetricUnit").textContent = state.policy === "adp"
-      ? `${state.marketSource === "espn" ? "ESPN" : state.marketSource === "sleeper" ? "Sleeper" : "ESPN / Sleeper consensus"} order · legal roster finish enforced`
+    $("bestMetricUnit").textContent = isMarketPolicy()
+      ? `${state.marketSource === "espn" ? "ESPN" : state.marketSource === "sleeper" ? "Sleeper" : "ESPN / Sleeper consensus"} order · ${state.policy === "capped_adp" ? "QB 2 / TE 2 / K 1 caps" : "league roster limits"}`
       : `256 ${state.marketSource}-market simulations to #${recommendations.onClock ? recommendations.nextTurn : recommendations.decisionPick}`;
     $("availableCount").textContent = data.players.filter((player) => statusFor(player.id) === "available").length;
     $("mineCount").textContent = data.players.filter((player) => statusFor(player.id) === "mine").length;
@@ -1106,7 +1115,7 @@
     const orderedPosterior = Object.entries(recommendations.posterior).sort((a, b) => b[1] - a[1]);
     const fullPosterior = orderedPosterior.map(([name, probability]) => `${roomModels[name].label} ${Math.round(probability * 100)}%`).join(" · ");
     const fixedModel = { balanced: "balanced", rb_rush: "rb_heavy", wr_rush: "wr_heavy", early_qb: "early_qb", zero_rb: "zero_rb" }[state.scenario];
-    $("roomPosteriorLabel").textContent = state.policy === "adp"
+    $("roomPosteriorLabel").textContent = isMarketPolicy()
       ? "Not used by market policy"
       : fixedModel ? `Fixed: ${roomModels[fixedModel].label}`
         : `Posterior: ${orderedPosterior.slice(0, 2).map(([name, probability]) => `${roomModels[name].label} ${Math.round(probability * 100)}%`).join(" · ")}`;
@@ -1117,12 +1126,12 @@
     const isRos = state.view === "ros";
     document.body.classList.toggle("ros-view", isRos);
     $("pageHeading").textContent = isRos ? "Rest-of-season values" : "Draft recommendations";
-    $("draftRankSub").textContent = isRos ? "Expected value · VOR" : isValidationView() ? "Live · Hindsight" : state.policy === "adp" ? `Live · ${state.marketSource.toUpperCase()} ADP` : "Live · model policy";
+    $("draftRankSub").textContent = isRos ? "Expected value · VOR" : isValidationView() ? "Live · Hindsight" : isMarketPolicy() ? `Live · ${state.marketSource.toUpperCase()} ADP` : "Live · model policy";
     $("pointsRankSub").textContent = isRos ? "ROS points · projected finish" : isValidationView() ? "Model · Actual" : "Model";
     $("projectionHeader").textContent = isRos ? "ROS projection" : "Projection";
     $("actualHeader").textContent = isRos ? "To date" : "Actual";
-    $("valueHeader").textContent = isRos ? "ROS VOR" : state.policy === "adp" ? "Model VOR" : "Roster gain";
-    $("riskHeader").textContent = isRos ? "Exp. games" : state.policy === "adp" ? "Market ADP" : "Survival";
+    $("valueHeader").textContent = isRos ? "ROS VOR" : isMarketPolicy() ? "Model VOR" : "Roster gain";
+    $("riskHeader").textContent = isRos ? "Exp. games" : isMarketPolicy() ? "Market ADP" : "Survival";
     const recommendations = recommendationState();
     const actualMetrics = isValidationView() ? formatMetrics((player) => player.actualPoints) : null;
     const players = filteredPlayers(recommendations, actualMetrics);
@@ -1390,7 +1399,7 @@
     $("seasonLabel").textContent = data.forecastType === "preseason" ? `${data.projectionSeason} preseason` : data.forecastType === "rest_of_season" ? `${data.projectionSeason} Week ${data.completedWeek}` : `${data.projectionSeason} validation season`;
     $("modelStatus").textContent = `${scoringName()} · ${liveForecast ? "current forecast" : "development model"}`;
     $("methodLabel").textContent = liveForecast
-      ? `${data.scope}. The ${policyAudit.holdoutSeason || 2024} holdout selected market ADP as the default; it follows the selected room's ordering while enforcing a legal roster finish. Projection-based roster and lookahead policies remain experimental. Rest-of-season value fixes completed results and updates future matchups and roles from current evidence.`
+      ? `${data.scope}. Historical managed-lineup tests select capped market ADP: follow the room order, stop at two QBs, two TEs, and one kicker, and preserve a legal roster finish. Projection-based roster and lookahead policies remain experimental. Rest-of-season value fixes completed results and updates future matchups and roles from current evidence.`
       : `${data.scope}. Recommendations combine game-level forecasts, format-derived replacement value, your roster, and the projected pool at your next snake turn; this remains a ${data.projectionSeason} out-of-sample validation board.`;
     $("footerScope").textContent = `${data.projectionSeason} · ${scoringName()} · ${data.players.length} fantasy-relevant players`;
     $("injuryStatus").textContent = data.injuryReportsAvailable

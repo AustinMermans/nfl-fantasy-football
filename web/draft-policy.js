@@ -1,21 +1,31 @@
 window.NFL_DRAFT_POLICY_AUDIT = {
   "generatedAt": "2026-09-01",
-  "developmentSeasons": [2019, 2020, 2021, 2022, 2023],
-  "holdoutSeason": 2024,
+  "developmentSeasons": [2019, 2020, 2021, 2022, 2023, 2024],
+  "holdoutSeason": 2025,
   "marketSource": "MyFantasyLeague AUG15 half-PPR ADP",
-  "opponents": "fixed and noisy legal roster-aware ADP",
-  "defaultPolicy": "adp",
-  "reason": "No candidate beat legal ADP on the untouched holdout season.",
-  "results": [
-    {"teams": 8, "selectedModelWeight": 0.0, "selectedLookahead": true, "adpWinRate": 0.5, "candidateWinRate": 0.4349, "winRateDelta": -0.0651},
-    {"teams": 10, "selectedModelWeight": 0.0, "selectedLookahead": true, "adpWinRate": 0.5, "candidateWinRate": 0.3730, "winRateDelta": -0.1270},
-    {"teams": 12, "selectedModelWeight": 0.0, "selectedLookahead": false, "adpWinRate": 0.5, "candidateWinRate": 0.3534, "winRateDelta": -0.1466},
-    {"teams": 14, "selectedModelWeight": 0.0, "selectedLookahead": false, "adpWinRate": 0.5, "candidateWinRate": 0.3348, "winRateDelta": -0.1652}
+  "opponents": "noisy legal roster-aware ADP with common room draws",
+  "lineupEvaluation": "weekly starters selected from preseason information, then scored on realized outcomes",
+  "defaultPolicy": "capped_adp",
+  "reason": "Exact market order with QB 2, TE 2, and K 1 caps was the only tested intervention with a positive multi-year managed-lineup result; unconstrained utility and probability lookahead remain unvalidated.",
+  "policy": {
+    "ordering": "selected live room ADP",
+    "caps": {"QB": 2, "TE": 2, "K": 1},
+    "otherLimits": "league roster maximums",
+    "legalFinish": true
+  },
+  "holdoutResults": [
+    {"teams": 8, "rooms": 160, "adpWinRate": 0.5389, "candidateWinRate": 0.5396, "winRateDelta": 0.0007, "pointDelta": -4.90},
+    {"teams": 10, "rooms": 200, "adpWinRate": 0.5315, "candidateWinRate": 0.5323, "winRateDelta": 0.0008, "pointDelta": 2.21},
+    {"teams": 12, "rooms": 240, "adpWinRate": 0.5004, "candidateWinRate": 0.5081, "winRateDelta": 0.0077, "pointDelta": 12.28},
+    {"teams": 14, "rooms": 280, "adpWinRate": 0.5249, "candidateWinRate": 0.5301, "winRateDelta": 0.0052, "pointDelta": 7.05}
   ],
-  "marketGuardrailResults": [
-    {"teams": 8, "fixedWinRateDelta": -0.0217, "noisyWinRateDelta": -0.0093, "noisyPointDelta": -14.50},
-    {"teams": 10, "fixedWinRateDelta": -0.0294, "noisyWinRateDelta": -0.0094, "noisyPointDelta": -8.52},
-    {"teams": 12, "fixedWinRateDelta": -0.0292, "noisyWinRateDelta": -0.0351, "noisyPointDelta": -41.40},
-    {"teams": 14, "fixedWinRateDelta": -0.1064, "noisyWinRateDelta": -0.0005, "noisyPointDelta": 10.90}
-  ]
+  "tenTeamYearResults": [
+    {"season": 2020, "winRateDelta": 0.0040, "pointDelta": 7.06},
+    {"season": 2021, "winRateDelta": -0.0014, "pointDelta": 2.74},
+    {"season": 2022, "winRateDelta": 0.0087, "pointDelta": 10.75},
+    {"season": 2023, "winRateDelta": 0.0153, "pointDelta": 20.85},
+    {"season": 2024, "winRateDelta": 0.0075, "pointDelta": 16.28},
+    {"season": 2025, "winRateDelta": 0.0020, "pointDelta": 6.28}
+  ],
+  "supersededFinding": "The earlier best-lineup-after-results evaluator leaked outcome information and is not used for the deployed conclusion."
 };

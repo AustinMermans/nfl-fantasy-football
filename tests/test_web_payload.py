@@ -38,12 +38,14 @@ def test_live_components_are_labeled_as_unreconciled_diagnostics() -> None:
     assert "unreconciled diagnostic" in source
 
 
-def test_live_board_defaults_to_validated_market_and_supports_full_history_editing() -> None:
+def test_live_board_defaults_to_capped_market_and_supports_full_history_editing() -> None:
     source = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
     html = (PROJECT_ROOT / "web" / "index.html").read_text(encoding="utf-8")
 
-    assert 'defaultPolicy: "adp"' in source
-    assert 'value="adp">Validated market ADP' in html
+    assert 'defaultPolicy: "capped_adp"' in source
+    assert 'value="capped_adp">Validated capped market ADP' in html
+    assert 'value="adp">Market ADP control' in html
+    assert "const validatedCaps = { QB: 2, TE: 2, K: 1 };" in source
     assert 'id="marketSourceSelect"' in html
     assert 'id="draftHistoryBody"' in html
     assert 'data-history-action="delete"' in source

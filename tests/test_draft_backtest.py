@@ -3,6 +3,8 @@ import pandas as pd
 from nfl_fantasy_football.draft_backtest import (
     PolicyConfig,
     _opponent_pick,
+    _timing_eligible,
+    _weekly_lineup_score,
     add_market_implied_points,
     display_name_from_mfl,
     normalized_player_name,
@@ -115,3 +117,141 @@ def test_policy_grid_builds_distinct_market_guardrails() -> None:
     assert len(policies) == 4
     assert {policy.max_adp_reach for policy in policies} == {2.0, 8.0}
     assert len({policy.name for policy in policies}) == 4
+
+
+def test_managed_lineup_does_not_use_realized_points_to_choose_starter() -> None:
+    roster = [
+        {
+            "mfl_id": "starter",
+            "name": "Starter",
+            "position": "QB",
+            "adp": 10.0,
+            "market_points": 300.0,
+            "actual_weekly": {1: 5.0},
+        },
+        {
+            "mfl_id": "backup",
+            "name": "Backup",
+            "position": "QB",
+            "adp": 100.0,
+            "market_points": 200.0,
+            "actual_weekly": {1: 30.0},
+        },
+    ]
+    slots = {"QB": 1, "RB": 0, "WR": 0, "TE": 0, "FLEX": 0, "K": 0}
+
+    managed = _weekly_lineup_score(
+        roster,
+        1,
+        selection_key="market_points",
+        roster_slots=slots,
+        lineup_mode="managed",
+    )
+    best_ball = _weekly_lineup_score(
+        roster,
+        1,
+        selection_key="market_points",
+        roster_slots=slots,
+        lineup_mode="best_ball",
+    )
+
+    assert managed == 5.0
+    assert best_ball == 30.0
+
+
+def test_policy_grid_builds_roster_construction_profiles() -> None:
+    policies = policy_grid(
+        model_weights=[0.0],
+        bench_weights=[0.0],
+        adp_reaches=[2.0],
+        roster_profiles=["one_qb_one_te", "two_qb_two_te"],
+    )
+
+    assert len(policies) == 4
+    assert {policy.roster_profile for policy in policies} == {
+        "one_qb_one_te",
+        "two_qb_two_te",
+    }
+
+
+def test_policy_grid_builds_distinct_decision_rules() -> None:
+    policies = policy_grid(
+        model_weights=[0.0],
+        bench_weights=[0.0],
+        adp_reaches=[0.0],
+        roster_profiles=["two_qb_two_te"],
+        lookahead_values=[False],
+        decision_rules=["adp", "utility"],
+    )
+
+    assert len(policies) == 2
+    assert {policy.decision_rule for policy in policies} == {"adp", "utility"}
+    assert len({policy.name for policy in policies}) == 2
+
+
+def test_capped_adp_policy_enforces_two_qb_two_te_one_k_maximums() -> None:
+    rows = []
+    adp = 1
+    for position, count in (("QB", 8), ("TE", 6), ("K", 4), ("RB", 16), ("WR", 16)):
+        for index in range(count):
+            points = 200.0 - adp
+            rows.append(
+                {
+                    "mfl_id": f"{position}{index}",
+                    "name": f"{position} {index}",
+                    "position": position,
+                    "adp": float(adp),
+                    "market_points": points,
+                    "season_ensemble": points,
+                    "actual_weekly": {week: points for week in range(1, 18)},
+                }
+            )
+            adp += 1
+
+    result = simulate_historical_draft(
+        pd.DataFrame(rows),
+        teams=2,
+        draft_slot=1,
+        rounds=10,
+        strategy="hybrid",
+        policy=PolicyConfig(
+            model_weight=0.0,
+            bench_weight=0.0,
+            lookahead=False,
+            roster_profile="two_qb_two_te",
+            decision_rule="adp",
+        ),
+    )
+
+    assert result["n_qb"] == 2
+    assert result["n_te"] == 2
+    assert result["n_k"] == 1
+
+
+def test_late_reserve_timing_delays_kicker_and_backup_qb() -> None:
+    eligible = [
+        {"mfl_id": "qb", "position": "QB"},
+        {"mfl_id": "rb", "position": "RB"},
+        {"mfl_id": "k", "position": "K"},
+    ]
+    roster = [{"mfl_id": "starter-qb", "position": "QB"}]
+
+    middle = _timing_eligible(
+        eligible,
+        roster,
+        overall_pick=51,
+        teams=10,
+        rounds=17,
+        profile="late_reserves",
+    )
+    final = _timing_eligible(
+        eligible,
+        roster,
+        overall_pick=161,
+        teams=10,
+        rounds=17,
+        profile="late_reserves",
+    )
+
+    assert [player["mfl_id"] for player in middle] == ["rb"]
+    assert {player["mfl_id"] for player in final} == {"qb", "rb", "k"}

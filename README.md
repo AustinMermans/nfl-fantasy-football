@@ -128,11 +128,11 @@ designation applies only to its reported game week and is not normalized away.
 Player recurrence, severity, and BMI modifiers remain audit-only because the
 historical active-roster panel excludes many IR/PUP spells.
 
-The default live recommendation is now the strongest validated policy: take the
-best available player in the selected market order while preserving the ability
-to complete a legal roster. The room market can be ESPN, Sleeper half-PPR ADP,
-or their mean; ESPN remains the default for an ESPN-hosted draft. Market ADP is
-an opponent and timing input and never changes the published player forecast.
+The default live recommendation is capped market ADP: take the best available
+player in the selected ESPN, Sleeper, or consensus order, while preserving a
+legal finish and limiting the roster to two QBs, two TEs, and one kicker. RB and
+WR retain the league limits. Plain legal ADP remains selectable as the control.
+Market ADP never changes the published player forecast.
 
 The projection-based weekly-roster and probability-lookahead policies remain
 selectable experiments. At every Mine/Taken action they recompute snake state,
@@ -154,28 +154,22 @@ run and trails slightly in balanced and WR-run rooms. The report is written to
 `results/draft_policy_stress_test.csv`.
 
 `draft-policy-backtest` is the valid preseason policy evaluation. It uses
-MyFantasyLeague AUG15 ADP by season and league size, frozen Week-0 model
-forecasts, fixed legal roster-aware ADP opponents, and realized managed weekly
-lineups. Policies were selected on 2019-2023 and evaluated once on 2024.
-Development chose zero model weight in 8-, 10-, 12-, and 14-team leagues. On the
-2024 holdout, the selected candidates trailed legal ADP by `6.5`, `12.7`, `14.7`,
-and `16.5` H2H win-rate percentage points, respectively. The failed candidates
-were not promoted; legal ADP is the deployed default.
+MyFantasyLeague AUG15 ADP by season and league size, frozen Week-0 selection
+information, noisy roster-aware ADP opponents, and realized weekly outcomes.
+Weekly starters are selected before actual points are revealed; an earlier
+best-ball-style evaluator that selected starters from realized scores is
+superseded.
 
-The follow-up draft-theory test removed our forecast from the candidate value,
-restricted choices to 2-, 4-, or 8-pick ADP neighborhoods, and tested greedy and
-next-turn policies. It was run against both deterministic ADP opponents and
-noisy opponents whose deviations widen by draft depth. Baseline and candidate
-shared each realized noisy room, while lookahead used independent future draws.
-The guarded candidate still failed to beat legal ADP on 2024 H2H outcomes at
-all four league sizes. Noisy-room deltas were `-0.9`, `-0.9`, `-3.5`, and
-`-0.1` percentage points for 8, 10, 12, and 14 teams.
-
-This result does not prove ADP is universally optimal. It establishes that the
-current forecast and heuristic draft layer have not beaten the much stronger
-market baseline under either tested room model. Raw manager-level draft
-sequences, auction values, trades, waivers, and playoff scheduling remain
-outside the test.
+Flexible forecast weighting, roster utility, ADP reaches, and probability
+lookahead did not beat ADP. Exact ADP with `QB <= 2`, `TE <= 2`, and `K <= 1`
+did. In rolling-origin 10-team tests from 2020-2025 it improved mean H2H win rate
+by `0.60` percentage points and managed points by `10.66`; points improved in
+all six years. On the frozen 2025 cross-size test, H2H deltas were positive for
+8, 10, 12, and 14 teams (`+0.07`, `+0.08`, `+0.77`, and `+0.52` percentage
+points), with the clearest evidence in 12-team leagues. The H2H effect remains
+small and uncertain in some formats, so this is a constrained empirical edge,
+not proof of global optimality. Raw manager draft sequences, waiver/trade
+behavior, and playoff scheduling remain outside the test.
 
 The current board omits hindsight and actual columns until 2026 games are
 completed. Historical validation outputs remain in `results/`; no realized

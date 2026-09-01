@@ -71,7 +71,7 @@ h1 { margin: 0; font-size: 38px; line-height: 1.05; letter-spacing: 0; }
 .draft-record input:focus, .draft-record select:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(23,99,63,.12); }
 .draft-record > small { align-self: center; color: var(--green); font-size: 10px; font-weight: 750; }
 
-.draft-setup { margin-bottom: 12px; display: grid; grid-template-columns: 130px 120px 190px 190px 1fr; align-items: end; gap: 12px; padding: 14px 16px; background: #e9eeeb; border: 1px solid #d7ddd9; }
+.draft-setup { margin-bottom: 12px; display: grid; grid-template-columns: 130px 120px 190px 250px 1fr; align-items: end; gap: 12px; padding: 14px 16px; background: #e9eeeb; border: 1px solid #d7ddd9; }
 .draft-setup label, .roster-needs { display: grid; gap: 6px; }
 .draft-setup label > span, .roster-needs > span { color: var(--muted); font-size: 9px; font-weight: 850; text-transform: uppercase; }
 .draft-setup label > small { min-height: 12px; color: var(--green); font-size: 9px; font-weight: 750; }
@@ -241,10 +241,10 @@ footer { max-width: 1420px; margin: 0 auto; padding: 18px 24px 26px; display: fl
   .method-label { display: none; }
   .summary-strip { order: 1; position: sticky; top: 0; z-index: 8; }
   .draft-history { order: 2; }
-  .toolbar { order: 3; margin-top: 12px; }
-  .table-shell { order: 4; }
-  .draft-setup { order: 5; margin-top: 18px; }
-  .scoring-setup { order: 6; }
+  .draft-setup { order: 3; margin-top: 12px; }
+  .scoring-setup { order: 4; }
+  .toolbar { order: 5; margin-top: 12px; }
+  .table-shell { order: 6; }
   .draft-record { order: 0; grid-template-columns: minmax(0, 1fr) 44px 44px; padding: 12px; }
   .draft-record .draft-name-field, .draft-record .saved-draft-field { grid-column: 1 / 3; }
   .draft-record .saved-draft-field { grid-row: 2; }
