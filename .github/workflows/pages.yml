@@ -60,6 +60,10 @@ jobs:
         if: github.event_name != 'push'
         run: nfl-fantasy season-forecast --season 2026 --refresh
 
+      - name: Verify refreshed forecast payload
+        if: github.event_name != 'push'
+        run: pytest -q tests/test_web_payload.py
+
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
         with:

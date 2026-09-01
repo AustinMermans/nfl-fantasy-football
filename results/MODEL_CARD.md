@@ -103,7 +103,7 @@ later-week rolling features as zeros.
 Veteran season totals use a compact Ridge/histogram ensemble built from the
 prior two seasons' points, points per game, games, games played, snap share,
 age, experience, draft pick, career length, and position. The season model
-supplies 100% of every veteran's Week-0 center. Component forecasts determine
+supplies 100% of every eligible veteran's Week-0 center. Component forecasts determine
 weekly matchup shape and gain mean weight only as current-season games are
 observed. Veterans below the 20-point minimum-history threshold use a labeled
 current position-depth role-prior fallback; they do not revert to the game model.
