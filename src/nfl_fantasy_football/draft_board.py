@@ -289,7 +289,7 @@ def export_draft_board(
         "draftMethod": "Weekly managed-lineup value with bench, bye, and outcome uncertainty",
         "draftConfig": {
             "teams": 10,
-            "draftSlot": 1,
+            "draftSlot": 10,
             "rosterSlots": LEAGUE_ROSTER_SLOTS,
             "benchSlots": 8,
             "rounds": 17,
@@ -430,7 +430,7 @@ def export_preseason_board(
         "draftMethod": "Weekly managed-lineup value with bench, bye, and outcome uncertainty",
         "draftConfig": {
             "teams": 10,
-            "draftSlot": 1,
+            "draftSlot": 10,
             "rosterSlots": LEAGUE_ROSTER_SLOTS,
             "benchSlots": 8,
             "rounds": 17,

@@ -2,11 +2,11 @@
   "use strict";
 
   const data = window.NFL_DRAFT_DATA;
-  const storageKey = "nfl-fantasy-draft-board-v5";
-  const previousStorageKey = "nfl-fantasy-draft-board-v4";
+  const storageKey = "nfl-fantasy-draft-board-v6";
+  const previousStorageKey = "nfl-fantasy-draft-board-v5";
   const legacyStorageKey = "nfl-fantasy-draft-board-v1";
   const defaultConfig = data?.draftConfig || {
-    teams: 10, draftSlot: 1, rosterSlots: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 2, K: 1 }, benchSlots: 8, rounds: 17,
+    teams: 10, draftSlot: 10, rosterSlots: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 2, K: 1 }, benchSlots: 8, rounds: 17,
   };
   const baseScoring = data?.scoringWeights || {
     passing_yards: 0.04, passing_tds: 4, passing_interceptions: -2,
