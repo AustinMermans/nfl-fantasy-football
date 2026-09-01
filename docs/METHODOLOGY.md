@@ -141,6 +141,14 @@ filled at format-derived weekly replacement so an incomplete roster does not
 make raw QB points dominate. Four bench slots cap the roster at 12 players. No
 realized outcome enters the recommendation.
 
+The outcome paths include persistent random injury absences. Position-level
+onset and duration baselines are estimated from 2012-2025 active-roster games
+with zero snaps and a contemporaneous injury report. A 34-game prior shrinks
+player recurrence toward position, a two-episode prior shrinks historical
+duration/severity, and within-position BMI tercile risk ratios use 300 games of
+empirical-Bayes shrinkage. Healthy weeks are rescaled to preserve the original
+player point mean, isolating the value of roster insurance.
+
 Rookie P10/P50/P90 is sampled once per outcome path as a persistent role state.
 Weekly lognormal shocks use position-specific 2018-2024 expanding-window
 out-of-sample residual scales. The policy is a one-turn quantal-response

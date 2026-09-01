@@ -39,13 +39,28 @@ The candidate with the largest expected two-turn weekly-lineup value ranks first
 The board also reports the fraction of baseline paths in which each player
 survives to the next turn.
 
-For every candidate, 12 common outcome paths run across Weeks 1-18. A missing
+For every candidate, 16 common outcome paths run across Weeks 1-18. A missing
 scheduled game is a bye and scores zero. Within each week, the simulator chooses
 the best legal QB/RB/WR/TE/FLEX/K lineup from the roster and fills empty slots at
 the position's format-derived weekly replacement level. Position-specific
 lognormal volatility is fit from 2018-2024 expanding-window out-of-sample
 residuals. Four explicit bench slots cap the roster at 12 players; once full,
 the candidate is valued only after optimally dropping one current player.
+
+Every path also samples persistent injury-availability states. The position
+baseline is the historical weekly rate of a zero-snap game accompanied by an
+injury report. Player recurrence is a beta-binomial-style posterior with 34
+position-prior games. Mean episode length is shrunk by two position-prior
+episodes and represents prior severity. Within-position BMI terciles contribute
+an empirical-Bayes risk ratio with 300 exposure games of shrinkage. Injury
+duration is geometric and capped at eight weeks; it advances through bye weeks.
+Current Out, Doubtful, and Questionable designations imply 100%, 75%, and 25%
+Week 1 absence probabilities.
+
+Healthy-game output is scaled by each player's simulated availability rate.
+This preserves the published marginal point mean and makes the new process a
+model of bench insurance and replacement timing, rather than an unannounced
+downward revision to the player forecast.
 
 A final-round kicker timing prior prevents the short horizon from spending an
 early pick on a position whose replacement pool is expected to remain available.

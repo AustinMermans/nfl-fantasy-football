@@ -161,6 +161,7 @@ h1 { margin: 0; font-size: 38px; line-height: 1.05; letter-spacing: 0; }
 .forecast-range > div:first-child { border-left: 0; }
 .forecast-range span { display: block; color: var(--muted); font-size: 8px; font-weight: 850; text-transform: uppercase; }
 .forecast-range strong { display: block; margin-top: 4px; font-size: 15px; }
+.injury-range { margin-top: 9px; }
 .detail-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 9px; }
 .detail-heading strong, .detail-heading span { display: block; }
 .detail-heading strong { font-size: 12px; }

@@ -92,6 +92,14 @@ sampled high outcome. Position-specific volatility comes from 2018-2024
 expanding-window out-of-sample residuals. Rookie P10/P50/P90 is sampled as a
 season-level role state, preserving stash upside without a manual rookie bonus.
 
+Each outcome path also samples persistent injury absences. Position supplies the
+baseline onset rate; a 34-game empirical-Bayes prior updates it from the player's
+previous injury-absence episodes, prior episode length supplies severity, and an
+empirical within-position BMI tercile supplies the size adjustment. Episodes can
+span multiple games and continue through a bye. Availability paths are
+mean-preserving, so this layer changes the insurance value of bench depth without
+silently subtracting injury risk from the published point forecast a second time.
+
 At every Mine/Taken action, the board recomputes the snake state and runs 16
 common-seed simulations of the intervening picks. Opponents follow a
 roster-aware quantal-response policy over format-value rank. Logged opponent
@@ -131,6 +139,8 @@ Starter information comes from the latest nflverse depth chart and active
 roster. Detailed injury designations are ingested when a current nflverse injury
 file exists. Before the league publishes that report, the board displays
 "unavailable" and treats missing injury data as unknown, never as healthy.
+The random injury prior still runs when a current report is unavailable. When a
+report is present, Out/Doubtful/Questionable status also seeds Week 1 availability.
 
 The public GitHub Pages site contains only this draft-board interface. Pushes to
 `main` run the test suite and deploy the static `web/` directory through

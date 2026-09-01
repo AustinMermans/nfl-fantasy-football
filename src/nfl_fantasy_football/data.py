@@ -139,7 +139,7 @@ def load_player_games(
 
     roster_columns = [
         "season", "week", "team", "gsis_id", "pfr_id", "full_name", "position",
-        "birth_date", "years_exp", "rookie_year", "draft_number",
+        "birth_date", "height", "weight", "years_exp", "rookie_year", "draft_number",
     ]
     base = rosters[roster_columns].merge(
         team_games,

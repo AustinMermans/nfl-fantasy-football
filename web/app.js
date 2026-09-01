@@ -172,6 +172,21 @@
     return outcome / average;
   }
 
+  function injuryDuration(meanDuration, key) {
+    const mean = Math.max(1, Number(meanDuration || 1));
+    const success = 1 / mean;
+    if (success >= 1) return 1;
+    return Math.min(8, Math.ceil(Math.log(1 - hashUniform(key)) / Math.log(1 - success)));
+  }
+
+  function currentInjuryProbability(player) {
+    const status = String(player.injury?.gameStatus || "").toLowerCase();
+    if (status === "out") return 1;
+    if (status === "doubtful") return 0.75;
+    if (status === "questionable") return 0.25;
+    return 0;
+  }
+
   function buildWeeklyOutcomes(metrics) {
     const weeks = Number(data.benchModel?.weeks || 18);
     const simulations = Number(data.benchModel?.simulations || 12);
@@ -179,6 +194,32 @@
     const outcomes = new Map();
     data.players.forEach((player) => {
       const games = new Map(player.games.map((game) => [Number(game.week), game]));
+      const injuryRisk = player.injuryRisk || {};
+      const weeklyHazard = Math.min(0.08, Math.max(0.005, Number(injuryRisk.weeklyHazard || 0.025)));
+      const meanDuration = Math.min(6, Math.max(1, Number(injuryRisk.meanDuration || 2)));
+      const availability = new Uint8Array(weeks * simulations);
+      let availableGames = 0;
+      let scheduledGames = 0;
+      for (let scenario = 0; scenario < simulations; scenario += 1) {
+        let injuryWeeksRemaining = hashUniform(`${player.id}-${scenario}-current-injury`) < currentInjuryProbability(player)
+          ? injuryDuration(meanDuration, `${player.id}-${scenario}-current-duration`) : 0;
+        for (let week = 1; week <= weeks; week += 1) {
+          const index = scenario * weeks + week - 1;
+          const hasGame = games.has(week);
+          if (hasGame) scheduledGames += 1;
+          if (injuryWeeksRemaining > 0) {
+            injuryWeeksRemaining -= 1;
+            continue;
+          }
+          if (hasGame && hashUniform(`${player.id}-${scenario}-${week}-injury`) < weeklyHazard) {
+            injuryWeeksRemaining = injuryDuration(meanDuration, `${player.id}-${scenario}-${week}-duration`) - 1;
+            continue;
+          }
+          availability[index] = 1;
+          if (hasGame) availableGames += 1;
+        }
+      }
+      const healthyScale = availableGames > 0 ? scheduledGames / availableGames : 1;
       const positionError = Math.min(0.9, Math.max(0.25, Number(parameters[player.position]?.relativeError68 || 0.6)));
       const logSigma = Math.sqrt(Math.log(1 + positionError ** 2));
       const values = new Float64Array(weeks * simulations);
@@ -186,10 +227,11 @@
         const roleMultiplier = rookieRoleMultiplier(player, scenario);
         for (let week = 1; week <= weeks; week += 1) {
           const game = games.get(week);
-          if (!game) continue;
-          const mean = Math.max(0, gamePointsFor(game)) * roleMultiplier;
+          const index = scenario * weeks + week - 1;
+          if (!game || !availability[index]) continue;
+          const mean = Math.max(0, gamePointsFor(game)) * roleMultiplier * healthyScale;
           const noise = Math.exp(logSigma * standardNormal(`${player.id}-${scenario}-${week}`) - 0.5 * logSigma ** 2);
-          values[scenario * weeks + week - 1] = mean * noise;
+          values[index] = mean * noise;
         }
       }
       outcomes.set(player.id, values);
@@ -536,6 +578,14 @@
   function playerDetail(player) {
     const range = scaledRange(player);
     const injury = [player.injury?.gameStatus, player.injury?.practiceStatus, player.injury?.bodyPart].filter(Boolean).join(" · ");
+    const injuryRisk = player.injuryRisk || {};
+    const injuryRiskMarkup = `
+      <div class="forecast-range injury-range">
+        <div><span>Expected missed</span><strong>${Number(injuryRisk.expectedMissedGames || 0).toFixed(1)} games</strong></div>
+        <div><span>Weekly onset</span><strong>${(100 * Number(injuryRisk.weeklyHazard || 0)).toFixed(1)}%</strong></div>
+        <div><span>Prior injury record</span><strong>${Number(injuryRisk.historyEpisodes || 0)} episodes · ${Number(injuryRisk.historyMissedGames || 0)} missed</strong></div>
+        <div><span>Size risk factor</span><strong>${Number(injuryRisk.sizeMultiplier || 1).toFixed(2)}×</strong></div>
+      </div>`;
     const rangeMarkup = range.source === "historical rookie analogs" ? `
       <div class="forecast-range">
         <div><span>Rookie floor P10</span><strong>${range.p10.toFixed(1)}</strong></div>
@@ -549,6 +599,7 @@
           <span class="detail-label">Projected season components</span>
           <div class="stat-grid">${statItems(player)}</div>
           ${rangeMarkup}
+          ${injuryRiskMarkup}
           ${injury ? `<span class="detail-label">Injury report · ${escapeHtml(injury)}</span>` : ""}
         </div>
         ${weeklyProjectionTable(player)}
@@ -774,7 +825,7 @@
     $("seasonLabel").textContent = data.forecastType === "preseason" ? `${data.projectionSeason} preseason` : `${data.projectionSeason} validation season`;
     $("modelStatus").textContent = `${scoringName()} · ${data.forecastType === "preseason" ? "current forecast" : "development model"}`;
     $("methodLabel").textContent = data.forecastType === "preseason"
-      ? `${data.scope}. Models refit through ${data.trainingThrough}; active rosters, starter depth, schedule, and game lines as of ${new Date(data.dataAsOf).toLocaleString()}. Recommendations simulate managed weekly lineups, four bench slots, opponent choices, and your next snake turn.`
+      ? `${data.scope}. Models refit through ${data.trainingThrough}; active rosters, starter depth, schedule, and game lines as of ${new Date(data.dataAsOf).toLocaleString()}. Recommendations simulate managed weekly lineups, injury paths, four bench slots, opponent choices, and your next snake turn.`
       : `${data.scope}. Recommendations combine game-level forecasts, format-derived replacement value, your roster, and the projected pool at your next snake turn; this remains a ${data.projectionSeason} out-of-sample validation board, not a live ${new Date().getFullYear()} preseason ranking.`;
     $("footerScope").textContent = `${data.projectionSeason} · ${scoringName()} · ${data.players.length} fantasy-relevant players`;
     $("injuryStatus").textContent = data.injuryReportsAvailable

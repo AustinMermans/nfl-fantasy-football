@@ -12,6 +12,7 @@ from .data import RAW_DIR, STAT_COLUMNS, _download, download_nflverse, load_play
 from .evaluation import TARGET_POSITIONS
 from .fantasy import DEPLOYMENT_SELECTION, KEYS, _selected_long
 from .features import build_features, feature_sets
+from .injury import estimate_injury_risk_profiles
 from .model import RecentMeanRegressor, build_estimator
 from .rookies import rookie_prior_table
 from .scoring import score_components, scoring_fields
@@ -149,6 +150,8 @@ def current_preseason_games(season: int) -> tuple[pd.DataFrame, str]:
         "full_name",
         "position",
         "birth_date",
+        "height",
+        "weight",
         "years_exp",
         "rookie_year",
         "draft_number",
@@ -411,6 +414,15 @@ def build_preseason_forecasts(
     future, as_of = current_preseason_games(season)
     history_features = build_features(history)
     future_features = preseason_feature_snapshots(history, future)
+    injury_profiles = estimate_injury_risk_profiles(history, future)
+    injury_profiles.to_csv(
+        PROJECT_ROOT / "results" / "current_injury_risk_profiles.csv", index=False
+    )
+    injury_profiles = injury_profiles.set_index("player_id")
+    for column in injury_profiles.columns:
+        future_features[column] = future_features["player_id"].map(
+            injury_profiles[column]
+        )
     components = component_forecasts(history_features, future_features)
     components, role_audit = apply_current_role_adjustments(
         components, future_features, history

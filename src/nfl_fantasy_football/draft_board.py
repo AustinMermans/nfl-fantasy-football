@@ -10,6 +10,7 @@ from .config import PROJECT_ROOT
 from .draft_probability import WEEKLY_OUTCOME_PARAMETERS, estimate_weekly_outcome_parameters
 from .draft_strategy import DEFAULT_ROSTER_SLOTS, format_draft_metrics
 from .fantasy import DEPLOYMENT_SELECTION, _selected_long
+from .injury import FALLBACK_DURATION, FALLBACK_HAZARD
 from .scoring import load_scoring
 
 
@@ -84,6 +85,10 @@ POSITION_DISPLAY_FIELDS = {
 
 def _number(value: object, digits: int = 1) -> float:
     return round(float(0.0 if pd.isna(value) else value), digits)
+
+
+def _number_or(value: object, default: float, digits: int = 4) -> float:
+    return round(float(default if pd.isna(value) else value), digits)
 
 
 def _text(value: object) -> str:
@@ -290,7 +295,7 @@ def export_draft_board(
         },
         "benchModel": {
             "weeks": 18,
-            "simulations": 12,
+            "simulations": 16,
             "parametersByPosition": estimate_weekly_outcome_parameters(fantasy),
             "source": "2018-2024 expanding-window out-of-sample residuals",
             "replacementPolicy": "weekly position-level waiver fill",
@@ -322,26 +327,38 @@ def export_preseason_board(
     """Publish a current preseason board without retrospective actual outcomes."""
     destination_dir = web_dir or PROJECT_ROOT / "web"
     players = build_player_rankings(fantasy, components, season=season)
+    profile_columns = [
+        "injury_weekly_hazard",
+        "injury_mean_duration",
+        "injury_expected_missed_games",
+        "injury_baseline_hazard",
+        "injury_history_episodes",
+        "injury_history_missed_games",
+        "injury_size_multiplier",
+        "height",
+        "weight",
+        "bmi",
+    ]
+    depth_columns = [
+        "player_id",
+        "depth_rank",
+        "depth_slot",
+        "pos_name",
+        "role_adjustment",
+        "rookie_p10",
+        "rookie_p50",
+        "rookie_p90",
+        "rookie_cohort_effective_n",
+        "current_injury_feed",
+        "report_primary_injury",
+        "report_status",
+        "practice_status",
+        *[column for column in profile_columns if column in future_features],
+    ]
     depth = (
         future_features.sort_values(["player_id", "week"])
         .groupby("player_id", as_index=False)
-        .first()[
-            [
-                "player_id",
-                "depth_rank",
-                "depth_slot",
-                "pos_name",
-                "role_adjustment",
-                "rookie_p10",
-                "rookie_p50",
-                "rookie_p90",
-                "rookie_cohort_effective_n",
-                "current_injury_feed",
-                "report_primary_injury",
-                "report_status",
-                "practice_status",
-            ]
-        ]
+        .first()[depth_columns]
         .set_index("player_id")
         .to_dict("index")
     )
@@ -365,6 +382,30 @@ def export_preseason_board(
             "bodyPart": _text(role.get("report_primary_injury")),
             "gameStatus": _text(role.get("report_status")),
             "practiceStatus": _text(role.get("practice_status")),
+        }
+        position = player["position"]
+        player["injuryRisk"] = {
+            "weeklyHazard": _number_or(
+                role.get("injury_weekly_hazard"), FALLBACK_HAZARD[position]
+            ),
+            "meanDuration": _number_or(
+                role.get("injury_mean_duration"), FALLBACK_DURATION[position]
+            ),
+            "expectedMissedGames": _number_or(
+                role.get("injury_expected_missed_games"),
+                17 * FALLBACK_HAZARD[position] * FALLBACK_DURATION[position],
+            ),
+            "baselineHazard": _number_or(
+                role.get("injury_baseline_hazard"), FALLBACK_HAZARD[position]
+            ),
+            "historyEpisodes": int(_number(role.get("injury_history_episodes"), 0)),
+            "historyMissedGames": int(
+                _number(role.get("injury_history_missed_games"), 0)
+            ),
+            "sizeMultiplier": _number_or(role.get("injury_size_multiplier"), 1.0),
+            "height": _number_or(role.get("height"), 0.0, 1),
+            "weight": _number_or(role.get("weight"), 0.0, 1),
+            "bmi": _number_or(role.get("bmi"), 0.0, 1),
         }
     injury_available = bool(future_features["current_injury_feed"].any())
     prediction_path = PROJECT_ROOT / "results" / "fantasy_point_predictions.parquet"
@@ -395,10 +436,17 @@ def export_preseason_board(
         },
         "benchModel": {
             "weeks": 18,
-            "simulations": 12,
+            "simulations": 16,
             "parametersByPosition": outcome_parameters,
             "source": "2018-2024 expanding-window out-of-sample residuals",
             "replacementPolicy": "weekly position-level waiver fill",
+        },
+        "injuryModel": {
+            "source": "2012-2025 point-in-time active-roster absences and injury reports",
+            "historyPriorGames": 34,
+            "durationPriorEpisodes": 2,
+            "sizeAdjustment": "within-position BMI tercile empirical-Bayes risk ratio",
+            "projectionTreatment": "mean-preserving availability paths",
         },
         "injuryReportsAvailable": injury_available,
         "injurySource": "nflverse/NFL game-status reports"

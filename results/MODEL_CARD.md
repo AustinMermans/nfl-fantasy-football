@@ -130,7 +130,7 @@ The live layer evaluates the available pool, inferred opponent rosters, the
 user's roster, snake slot, and picks until the next turn. Sixteen common-seed
 Monte Carlo paths sample roster-aware quantal-response opponent choices. Each
 candidate is ranked by expected managed weekly lineup value after the next
-turn. The roster utility uses 12 common outcome paths across Weeks 1-18, sets
+turn. The roster utility uses 16 common outcome paths across Weeks 1-18, sets
 bye weeks to zero, optimizes the legal QB/RB/WR/TE/FLEX/K lineup each week, and
 fills open slots at a position-level waiver replacement. Four bench slots make
 depth valuable only when it enters a weekly lineup; a 13th player must displace
@@ -144,6 +144,23 @@ lognormal weekly shocks. Rookie P10/P50/P90 is sampled once per path as a
 season-level role state, so breakout value is captured through optimal lineup
 selection instead of a manual bonus. The UI reports this immediate roster gain
 alongside simulated next-turn survival.
+
+Injury availability is simulated as persistent multiweek episodes. Historical
+onsets require zero snaps plus a contemporaneous injury report. Position is the
+baseline, while a 34-game empirical-Bayes prior updates recurrence from the
+player's previous episodes. Episode length, shrunk by two position-prior
+episodes, represents historical severity. Size enters through an empirically
+estimated within-position BMI-tercile risk ratio with 300 games of shrinkage.
+The observed position baselines are approximately 1.8% weekly for K, 2.0% for
+QB, 2.6% for TE, 2.7% for WR, and 3.0% for RB, with mean episodes near two weeks.
+Durations are geometrically sampled, capped at eight weeks, and continue through
+byes. Current Out/Doubtful/Questionable reports seed Week 1 when available.
+
+Availability simulations are mean-preserving: healthy-game output is rescaled
+by simulated availability, leaving the published marginal season projection
+unchanged. The injury layer therefore values backup coverage and replacement
+timing without double-counting absence risk already implicit in historical
+component forecasts.
 
 Adaptive opponent behavior is a five-model Bayesian mixture: 40% prior mass on
 Balanced and 15% each on RB-heavy, WR-heavy, Early-QB, and Zero-RB. Each observed
@@ -183,9 +200,12 @@ cross-fold grouped improvement exceeds the screened subset.
 - Individual defensive statistics and team D/ST are not yet modeled.
 - Kicker single-game ranking is weak. A team-implied-points layer has a modest
   grouped improvement but fails the individual-field multiple-testing gate.
-- Weekly residual shocks are independent across players and weeks. Multiweek
-  injuries, same-team opportunity constraints, schedule-level dependence,
-  head-to-head win probability, and championship objectives remain absent.
+- Injury onsets are independent across players and the body-part labels do not
+  yet distinguish recurrence mechanisms. Team-level injury correlation,
+  rehabilitation news, same-team opportunity constraints, schedule-level
+  dependence, head-to-head win probability, and championship objectives remain
+  absent. The injury approximation has not yet passed a rolling-origin
+  calibration study and should not be interpreted as a medical forecast.
 - The live draft policy has a stochastic one-turn prior but lacks fitted
   point-in-time ADP survival and a preseason walk-forward draft backtest. The current
   stress test aggregates weekly forecasts containing in-season information, so
