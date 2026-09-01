@@ -363,6 +363,18 @@ def apply_point_calibration(
     return output
 
 
+def veteran_reserve_cap_mask(adjustments: pd.DataFrame) -> pd.Series:
+    """Identify experienced reserves whose blended mean exceeds their role prior."""
+    reserve = adjustments.apply(
+        lambda row: row["depth_rank"] > STARTING_DEPTH[row["position"]], axis=1
+    )
+    return (
+        ~adjustments["is_rookie"]
+        & reserve
+        & adjustments["adjusted_points"].gt(adjustments["role_prior_points"])
+    )
+
+
 def apply_current_role_adjustments(
     components: pd.DataFrame,
     future_features: pd.DataFrame,
@@ -434,12 +446,6 @@ def apply_current_role_adjustments(
         adjustments["position"].map(position_prior)
     )
     rookie = adjustments["is_rookie"]
-    reserve = adjustments.apply(
-        lambda row: row["depth_rank"] > STARTING_DEPTH[row["position"]], axis=1
-    )
-    above_role = adjustments["predicted_fantasy_points"].gt(
-        adjustments["role_prior_points"]
-    )
     adjustments["adjusted_points"] = adjustments["predicted_fantasy_points"]
     adjustments["preseason_projection"] = adjustments["preseason_mean"]
     adjustments.loc[rookie, "preseason_projection"] = adjustments.loc[
@@ -462,17 +468,16 @@ def apply_current_role_adjustments(
     adjustments.loc[shrinkage, "inseason_component_weight"] = blended.map(
         lambda value: value[1]
     )
-    adjustments.loc[~rookie & reserve & above_role, "adjusted_points"] = adjustments.loc[
-        ~rookie & reserve & above_role, "role_prior_points"
-    ]
     adjustments["adjustment_reason"] = "none"
     adjustments.loc[shrinkage & ~rookie, "adjustment_reason"] = (
         "preseason/in-season empirical-Bayes blend"
     )
     adjustments.loc[rookie, "adjustment_reason"] = "rookie prior/in-season blend"
-    adjustments.loc[~rookie & reserve & above_role, "adjustment_reason"] = (
-        "reserve-role cap"
-    )
+    reserve_cap = veteran_reserve_cap_mask(adjustments)
+    adjustments.loc[reserve_cap, "adjusted_points"] = adjustments.loc[
+        reserve_cap, "role_prior_points"
+    ]
+    adjustments.loc[reserve_cap, "adjustment_reason"] = "reserve-role cap"
     adjustments["point_calibration_scale"] = (
         adjustments["adjusted_points"]
         / adjustments["predicted_fantasy_points"].clip(lower=1.0)
