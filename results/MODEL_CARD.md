@@ -102,11 +102,10 @@ later-week rolling features as zeros.
 
 Veteran season totals use a compact Ridge/histogram ensemble built from the
 prior two seasons' points, points per game, games, games played, snap share,
-age, experience, draft pick, career length, and position. For RB/WR/TE/K, 75%
-of the total comes from that season model and 25% from the detailed component
-stack. QBs use the season model total exclusively because the frozen component
-stack failed the preseason QB ordering audit; component forecasts still
-determine weekly matchup shape.
+age, experience, draft pick, career length, and position. The season model
+supplies 100% of every veteran's Week-0 center. Component forecasts determine
+weekly matchup shape and gain mean weight only as current-season games are
+observed.
 
 The season-total model is evaluated with an expanding 2018-2024 walk-forward
 window. Against prior-season points, fold-average RMSE improves from `65.024` to
@@ -117,24 +116,26 @@ game-level backtest remains useful for in-season updates.
 
 Zero-history rookies receive a historical position/draft-capital predictive
 range combined explicitly with current depth role. Depth-1 players weight
-cohort and role equally; reserves weight current role 75%. Rookie paths
-interpolate P10/P50/P90 with 10% tails while preserving the fitted mean.
+cohort and role equally; reserves weight current role 75%. P10/P50/P90 analog
+ranges are exported for inspection but do not enter live decision paths.
 Experienced reserves whose historical workload exceeds their current nonstarter
-role are capped at that same role median. The adjustment audit is written to
+role are capped at that same role median after preseason/in-season blending.
+The analog intervals are display-only until their coverage is validated. The adjustment audit is written to
 `results/current_role_adjustments.csv`.
 
 ### Rest-of-season layer
 
 The production artifact separates the preserved Week-0 draft projection,
-realized points, conditional rest-of-season points, availability-adjusted ROS
-points, and projected final points. A game crosses the cutoff only after its final
+realized points, an unconditional rest-of-season point mean, scenario expected
+games, and projected final points. A game crosses the cutoff only after its final
 score and corresponding player stats and snaps are published, so a partial or
 delayed week is handled game by game. Weekly features are rebuilt using completed
 current-season evidence and the exact remaining schedule.
 
-Current-form weight increases monotonically with games played using declared
-position-specific empirical-Bayes prior sample sizes. Injury-adjusted expectation
-uses the onset and duration model plus the current game designation. ROS value
+Current-form weight starts at zero and increases monotonically with games played
+using declared position-specific empirical-Bayes prior sample sizes. Generic
+availability scenarios are mean-preserving and do not discount the published
+mean; a current designation affects only its report week. ROS value
 over replacement is recomputed under league size and starting slots. This layer
 has unit coverage for prior updating, remaining-game prorating, and availability,
 but it does not yet have a multi-season ROS calibration report.
@@ -180,21 +181,18 @@ Weekly outcome volatility is estimated from 2018-2024 expanding-window
 out-of-sample fantasy-point residuals among the upper half of each position's
 forecast distribution. The central 68% relative-error scales are `0.466` QB,
 `0.637` RB, `0.752` WR, `0.855` TE, and `0.504` K. Simulations use mean-preserving
-lognormal weekly shocks. Rookie P10/P50/P90 is interpolated once per path as a
-season-level role state with 10% lower and upper tails, so breakout value is captured through optimal lineup
-selection instead of a manual bonus. The UI reports this immediate roster gain
+lognormal weekly shocks. Rookie P10/P50/P90 is displayed as an uncalibrated
+historical analog range but does not enter decision paths. The UI reports immediate roster gain
 alongside simulated next-turn survival.
 
-Injury availability is simulated as persistent multiweek episodes. Historical
-onsets require zero snaps plus a contemporaneous injury report. Position is the
-baseline, while a 34-game empirical-Bayes prior updates recurrence from the
-player's previous episodes. Episode length, shrunk by two position-prior
-episodes, represents historical severity. Size enters through an empirically
-estimated within-position BMI-tercile risk ratio with 300 games of shrinkage.
-The observed position baselines are approximately 1.8% weekly for K, 2.0% for
+Injury availability is simulated as persistent multiweek episodes using
+position-level onset and duration baselines. Historical onsets require zero snaps
+plus a contemporaneous injury report. The observed position baselines are approximately 1.8% weekly for K, 2.0% for
 QB, 2.6% for TE, 2.7% for WR, and 3.0% for RB, with mean episodes near two weeks.
 Durations are geometrically sampled, capped at eight weeks, and continue through
-byes. Current Out/Doubtful/Questionable reports seed Week 1 when available.
+byes. Current Out/Doubtful/Questionable reports apply 100%/95%/25% absence
+probabilities to the exact report week only. Player recurrence, severity, and
+BMI modifiers remain audit-only until an all-status panel is validated.
 
 Availability simulations are mean-preserving: healthy-game output is rescaled
 by simulated availability, leaving the published marginal season projection

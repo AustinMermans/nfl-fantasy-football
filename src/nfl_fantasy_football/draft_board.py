@@ -600,6 +600,10 @@ def export_preseason_board(
         ),
         "scoring": "Murphs house half-PPR",
         "scoringWeights": load_scoring(),
+        "componentProjectionTreatment": (
+            "raw game-model diagnostics; official fantasy-point means are "
+            "reconciled separately"
+        ),
         "scope": (
             f"{season} rest-of-season forecast after Week {completed_week}"
             if completed_week

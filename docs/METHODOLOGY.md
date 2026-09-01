@@ -132,13 +132,14 @@ both double counting and treating an upcoming game as a zero.
 The frozen Week-0 mean is prorated to the exact games remaining. The current
 weekly component forecast receives weight
 
-`w = w0 + (1 - w0) * games_played / (games_played + k_position)`.
+`w = games_played / (games_played + k_position)`.
 
-`w0` is the validated preseason component weight and `k_position` is 5 games for
-QB, 8 for RB/WR, and 10 for TE/K. Rookie `w0` is zero. Expected ROS points then
-multiply the conditional forecast by expected availability from injury onset,
-episode duration, and current game designation. ROS value over replacement uses
-the same league-size and lineup-derived starter demand as the draft model.
+`k_position` is 5 games for QB, 8 for RB/WR, and 10 for TE/K. Thus the validated
+season model supplies the entire Week-0 center, while the game model initially
+supplies weekly matchup shape. Published ROS points remain unconditional on
+availability; expected games are a separate scenario diagnostic. ROS value over
+replacement uses the same league-size and lineup-derived starter demand as the
+draft model.
 
 ## Draft recommendation
 
@@ -160,15 +161,16 @@ filled at format-derived weekly replacement so an incomplete roster does not
 make raw QB points dominate. Eight bench slots cap the roster at 17 players. No
 realized outcome enters the recommendation.
 
-The outcome paths include persistent random injury absences. Position-level
-onset and duration baselines are estimated from 2012-2025 active-roster games
-with zero snaps and a contemporaneous injury report. A 34-game prior shrinks
-player recurrence toward position, a two-episode prior shrinks historical
-duration/severity, and within-position BMI tercile risk ratios use 300 games of
-empirical-Bayes shrinkage. Healthy weeks are rescaled to preserve the original
-player point mean, isolating the value of roster insurance.
+The outcome paths include persistent random injury absences using position-level
+onset and duration baselines estimated from 2012-2025 active-roster games with
+zero snaps and a contemporaneous injury report. Healthy weeks are rescaled to
+preserve the original player point mean, isolating the value of roster insurance.
+Current game designations apply only to their report week after that normalization.
+Player recurrence, severity, and BMI estimates remain audit-only because IR/PUP
+weeks are censored from the production history.
 
-Rookie P10/P50/P90 is interpolated once per outcome path with 10% tails as a persistent role state.
+Rookie P10/P50/P90 is displayed as an uncalibrated historical analog range but
+does not enter decision paths.
 Weekly lognormal shocks use position-specific 2018-2024 expanding-window
 out-of-sample residual scales. The policy is a one-turn quantal-response
 prior, not a calibrated market-survival model. It does not solve the complete

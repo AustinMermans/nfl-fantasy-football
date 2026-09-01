@@ -15,7 +15,7 @@ change the raw football forecast.
 The draft layer always consumes the preserved Week-0 projection. Daily in-season
 updates are published as a separate rest-of-season view so observed results
 cannot retroactively alter the draft recommendation. ROS value uses only
-unplayed games, expected availability, and the same format-derived replacement
+unplayed games, an unconditional point mean, and the same format-derived replacement
 logic, providing a foundation for waiver and trade comparisons without changing
 the draft-room opponent model.
 
@@ -27,11 +27,11 @@ a historical analog distribution using same-position rookie seasons from
 combined with the current depth-role center. The UI exposes P10, P50, P90, and
 effective sample size.
 
-The range is empirical and uncalibrated. The deployed simulation interpolates
-one P10/P50/P90 rookie role state per season path with 10% tails and combines it with weekly
-outcome noise. It does not yet impose a shared team opportunity budget. The next
-version should estimate a smoothed rookie role state, update it with preseason
-depth, and resample entire historical component trajectories within that role.
+The range is empirical and uncalibrated, so it is display-only and does not enter
+the deployed decision simulation. It does not yet impose a shared team
+opportunity budget. A future version should estimate a smoothed rookie role
+state, validate interval coverage, update it with preseason depth, and resample
+entire historical component trajectories within that role.
 
 ## Live pick policy
 
@@ -56,15 +56,12 @@ lognormal volatility is fit from 2018-2024 expanding-window out-of-sample
 residuals. Eight explicit bench slots cap the roster at 17 players; once full,
 the candidate is valued only after optimally dropping one current player.
 
-Every path also samples persistent injury-availability states. The position
-baseline is the historical weekly rate of a zero-snap game accompanied by an
-injury report. Player recurrence is a beta-binomial-style posterior with 34
-position-prior games. Mean episode length is shrunk by two position-prior
-episodes and represents prior severity. Within-position BMI terciles contribute
-an empirical-Bayes risk ratio with 300 exposure games of shrinkage. Injury
-duration is geometric and capped at eight weeks; it advances through bye weeks.
-Current Out, Doubtful, and Questionable designations imply 100%, 75%, and 25%
-Week 1 absence probabilities.
+Every path also samples persistent injury-availability states from position-level
+onset and duration baselines. Injury duration is geometric, capped at eight
+weeks, and advances through bye weeks. Current Out, Doubtful, and Questionable
+designations imply 100%, 95%, and 25% absence probabilities in the exact report
+week only. Player recurrence, prior severity, and BMI estimates remain audit-only
+until an all-status injury panel is validated.
 
 Healthy-game output is scaled by each player's simulated availability rate.
 This preserves the published marginal point mean and makes the new process a

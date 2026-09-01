@@ -83,11 +83,12 @@ publishes a separate rest-of-season forecast. The Week-0 draft projection is
 preserved rather than rewritten by later information.
 
 The rest-of-season mean is an empirical-Bayes blend of the frozen preseason
-prior and the current opponent-aware weekly model. Current evidence gains weight
-as games are played, with position-specific prior sample sizes. A separate
-availability adjustment uses injury onset, expected duration, and the current
-game designation. The UI reports remaining expected points, expected available
-games, projected final points, and league-specific value over replacement.
+prior and the current opponent-aware weekly model. The preseason model supplies
+the complete Week-0 center; current evidence gains weight only as games are
+played, with position-specific prior sample sizes. The published mean remains
+unconditional because the season-total target already includes missed games.
+The UI separately reports scenario expected games, projected final points, and
+league-specific value over replacement.
 
 Rookies receive an empirical predictive distribution from 2012-2025 rookie
 seasons, smoothed by position and log draft-pick distance and combined with the
@@ -105,17 +106,17 @@ Player value is evaluated as expected points from 18 separately managed weekly
 lineups, with eight bench slots. A bench player earns value when he beats a
 rostered starter or weekly position-level waiver replacement during a bye or a
 sampled high outcome. Position-specific volatility comes from 2018-2024
-expanding-window out-of-sample residuals. Rookie P10/P50/P90 is interpolated as
-a season-level role state with 10% tails, preserving stash upside without a
-manual rookie bonus.
+expanding-window out-of-sample residuals. Rookie P10/P50/P90 remains a displayed
+historical analog range, but it does not affect recommendation utility until its
+coverage is validated in frozen preseason folds.
 
-Each outcome path also samples persistent injury absences. Position supplies the
-baseline onset rate; a 34-game empirical-Bayes prior updates it from the player's
-previous injury-absence episodes, prior episode length supplies severity, and an
-empirical within-position BMI tercile supplies the size adjustment. Episodes can
-span multiple games and continue through a bye. Availability paths are
-mean-preserving, so this layer changes the insurance value of bench depth without
-silently subtracting injury risk from the published point forecast a second time.
+Each outcome path also samples persistent injury absences from position-level
+onset and duration baselines. Generic paths are mean-preserving, so they change
+the insurance value of bench depth without subtracting injury risk from the
+published point forecast a second time. A current Out/Doubtful/Questionable
+designation applies only to its reported game week and is not normalized away.
+Player recurrence, severity, and BMI modifiers remain audit-only because the
+historical active-roster panel excludes many IR/PUP spells.
 
 At every Mine/Taken action, the board recomputes the snake state and runs 256
 common-seed simulations of the intervening picks. Opponents follow a

@@ -731,7 +731,7 @@
     return `
       <div class="player-detail">
         <div class="season-components">
-          <span class="detail-label">${state.view === "ros" ? "Projected remaining components" : "Projected season components"}</span>
+          <span class="detail-label">${state.view === "ros" ? "Raw remaining matchup components" : "Raw game-model components"} · unreconciled diagnostic</span>
           <div class="stat-grid">${statItems(player)}</div>
           ${rosMarkup}
           ${expertMarkup}

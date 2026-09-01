@@ -1,0 +1,32 @@
+import json
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _published_payload() -> dict:
+    raw = (PROJECT_ROOT / "web" / "projections.js").read_text(encoding="utf-8").strip()
+    prefix = "window.NFL_DRAFT_DATA = "
+    assert raw.startswith(prefix)
+    return json.loads(raw[len(prefix) :].removesuffix(";"))
+
+
+def test_preseason_payload_preserves_unconditional_ros_contract() -> None:
+    payload = _published_payload()
+
+    assert payload["forecastType"] == "preseason"
+    assert "raw game-model diagnostics" in payload["componentProjectionTreatment"]
+    for player in payload["players"]:
+        assert player["restOfSeasonExpectedPoints"] == player["projectedPoints"]
+        assert player["availabilityAdjustmentApplied"] is False
+        assert "baselineDuration" in player["injuryRisk"]
+        assert "reportWeek" in player["injury"]
+        assert player["projectionRange"]["decisionUse"] is False
+
+
+def test_live_components_are_labeled_as_unreconciled_diagnostics() -> None:
+    source = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+
+    assert "Raw game-model components" in source
+    assert "unreconciled diagnostic" in source

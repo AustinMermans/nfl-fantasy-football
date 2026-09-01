@@ -58,6 +58,33 @@ def test_availability_adjustment_includes_current_injury_status() -> None:
     assert out[2] > healthy[2]
 
 
+@pytest.mark.parametrize(
+    ("status", "probability"),
+    [("Out", 1.0), ("Doubtful", 0.95), ("Questionable", 0.25)],
+)
+def test_current_designation_affects_only_one_reported_game(
+    status: str, probability: float
+) -> None:
+    healthy = availability_adjusted_projection(
+        100.0,
+        remaining_games=10,
+        weekly_hazard=0.02,
+        mean_duration=4.0,
+    )
+    designated = availability_adjusted_projection(
+        100.0,
+        remaining_games=10,
+        weekly_hazard=0.02,
+        mean_duration=4.0,
+        current_status=status,
+    )
+
+    baseline_share = 0.02 * 4.0 / (1.0 + 0.02 * 3.0)
+    assert designated[2] - healthy[2] == pytest.approx(
+        (1.0 - baseline_share) * probability
+    )
+
+
 def test_unconditional_projection_is_not_discounted_again_for_availability() -> None:
     points, expected_games, expected_missed = unconditional_projection_with_availability(
         200.0,

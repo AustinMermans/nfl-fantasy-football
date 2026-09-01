@@ -13,7 +13,7 @@ POSITION_UPDATE_PRIOR_GAMES = {
 }
 CURRENT_INJURY_PROBABILITY = {
     "out": 1.0,
-    "doubtful": 0.75,
+    "doubtful": 0.95,
     "questionable": 0.25,
 }
 
@@ -77,7 +77,7 @@ def availability_adjusted_projection(
     current_probability = CURRENT_INJURY_PROBABILITY.get(
         str(current_status or "").strip().lower(), 0.0
     )
-    current_episode = current_probability * min(float(mean_duration), remaining_games)
+    current_episode = current_probability * min(1.0, float(remaining_games))
     expected_missed = min(
         float(remaining_games),
         baseline_missed + (1.0 - baseline_share) * current_episode,
