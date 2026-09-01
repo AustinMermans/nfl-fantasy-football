@@ -351,6 +351,7 @@ def export_preseason_board(
         "injury_mean_duration",
         "injury_expected_missed_games",
         "injury_baseline_hazard",
+        "injury_baseline_duration",
         "injury_history_episodes",
         "injury_history_missed_games",
         "injury_size_multiplier",
@@ -376,6 +377,7 @@ def export_preseason_board(
         "report_primary_injury",
         "report_status",
         "practice_status",
+        "report_week",
         *[column for column in profile_columns if column in future_features],
     ]
     depth = (
@@ -428,11 +430,13 @@ def export_preseason_board(
             if pd.notna(role.get("rookie_p50"))
             else "point forecast",
             "effectiveSample": _number(role.get("rookie_cohort_effective_n", 0.0)),
+            "decisionUse": False,
         }
         player["injury"] = {
             "bodyPart": _text(role.get("report_primary_injury")),
             "gameStatus": _text(role.get("report_status")),
             "practiceStatus": _text(role.get("practice_status")),
+            "reportWeek": int(_number(role.get("report_week"), 0)),
         }
         position = player["position"]
         player["injuryRisk"] = {
@@ -449,6 +453,9 @@ def export_preseason_board(
             "baselineHazard": _number_or(
                 role.get("injury_baseline_hazard"), FALLBACK_HAZARD[position]
             ),
+            "baselineDuration": _number_or(
+                role.get("injury_baseline_duration"), FALLBACK_DURATION[position]
+            ),
             "historyEpisodes": int(_number(role.get("injury_history_episodes"), 0)),
             "historyMissedGames": int(
                 _number(role.get("injury_history_missed_games"), 0)
@@ -461,8 +468,8 @@ def export_preseason_board(
         expected_points, expected_games, expected_missed = unconditional_projection_with_availability(
             player["projectedPoints"],
             remaining_games=player["projectedGames"],
-            weekly_hazard=player["injuryRisk"]["weeklyHazard"],
-            mean_duration=player["injuryRisk"]["meanDuration"],
+            weekly_hazard=player["injuryRisk"]["baselineHazard"],
+            mean_duration=player["injuryRisk"]["baselineDuration"],
             current_status=player["injury"]["gameStatus"],
         )
         player["injuryRisk"]["fullSeasonExpectedMissedGames"] = player[
@@ -480,6 +487,7 @@ def export_preseason_board(
             "p90": round(player["projectionRange"]["p90"] * range_scale, 1),
             "source": player["projectionRange"]["source"],
             "effectiveSample": player["projectionRange"]["effectiveSample"],
+            "decisionUse": player["projectionRange"]["decisionUse"],
         }
         actual = actual_summary.get(player["id"], {})
         player["actualPoints"] = _number(actual.get("actual_points", 0.0))
@@ -616,11 +624,11 @@ def export_preseason_board(
             "replacementPolicy": "weekly position-level waiver fill",
         },
         "injuryModel": {
-            "source": "2012-2025 point-in-time active-roster absences and injury reports",
+            "source": "2012-2025 ACT-roster zero-snap injury-report rows; IR/PUP spells excluded",
             "historyPriorGames": 34,
             "durationPriorEpisodes": 2,
-            "sizeAdjustment": "within-position BMI tercile empirical-Bayes risk ratio",
-            "projectionTreatment": "mean-preserving availability paths",
+            "sizeAdjustment": "audit only; not used by live decision simulation",
+            "projectionTreatment": "position-baseline mean-preserving paths plus current weekly designation",
         },
         "injuryReportsAvailable": injury_available,
         "injurySource": "nflverse/NFL game-status reports"

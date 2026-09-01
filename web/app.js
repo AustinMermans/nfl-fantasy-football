@@ -202,17 +202,7 @@
   }
 
   function rookieRoleMultiplier(player, scenario) {
-    const range = scaledRange(player);
-    if (range.source !== "historical rookie analogs") return 1;
-    const average = 0.3 * range.p10 + 0.4 * range.p50 + 0.3 * range.p90;
-    if (average <= 0) return 1;
-    const draw = hashUniform(`${player.id}-${scenario}-rookie`);
-    let outcome;
-    if (draw <= 0.1) outcome = range.p10;
-    else if (draw < 0.5) outcome = range.p10 + ((draw - 0.1) / 0.4) * (range.p50 - range.p10);
-    else if (draw < 0.9) outcome = range.p50 + ((draw - 0.5) / 0.4) * (range.p90 - range.p50);
-    else outcome = range.p90;
-    return outcome / average;
+    return 1;
   }
 
   function injuryDuration(meanDuration, key) {
@@ -225,7 +215,7 @@
   function currentInjuryProbability(player) {
     const status = String(player.injury?.gameStatus || "").toLowerCase();
     if (status === "out") return 1;
-    if (status === "doubtful") return 0.75;
+    if (status === "doubtful") return 0.95;
     if (status === "questionable") return 0.25;
     return 0;
   }
@@ -238,14 +228,15 @@
     data.players.forEach((player) => {
       const games = new Map(player.games.filter((game) => !game.completed).map((game) => [Number(game.week), game]));
       const injuryRisk = player.injuryRisk || {};
-      const weeklyHazard = Math.min(0.08, Math.max(0.005, Number(injuryRisk.weeklyHazard || 0.025)));
-      const meanDuration = Math.min(6, Math.max(1, Number(injuryRisk.meanDuration || 2)));
+      const weeklyHazard = Math.min(0.08, Math.max(0.005, Number(injuryRisk.baselineHazard || 0.025)));
+      const meanDuration = Math.min(6, Math.max(1, Number(injuryRisk.baselineDuration || 2)));
+      const reportWeek = Number(player.injury?.reportWeek || 0);
+      const currentProbability = currentInjuryProbability(player);
       const availability = new Uint8Array(weeks * simulations);
       let availableGames = 0;
       let scheduledGames = 0;
       for (let scenario = 0; scenario < simulations; scenario += 1) {
-        let injuryWeeksRemaining = hashUniform(`${player.id}-${scenario}-current-injury`) < currentInjuryProbability(player)
-          ? injuryDuration(meanDuration, `${player.id}-${scenario}-current-duration`) : 0;
+        let injuryWeeksRemaining = 0;
         for (let week = 1; week <= weeks; week += 1) {
           const index = scenario * weeks + week - 1;
           const hasGame = games.has(week);
@@ -272,6 +263,7 @@
           const game = games.get(week);
           const index = scenario * weeks + week - 1;
           if (!game || !availability[index]) continue;
+          if (week === reportWeek && hashUniform(`${player.id}-${scenario}-current-injury`) < currentProbability) continue;
           const mean = Math.max(0, gamePointsFor(game)) * roleMultiplier * healthyScale;
           const noise = Math.exp(logSigma * standardNormal(`${player.id}-${scenario}-${week}`) - 0.5 * logSigma ** 2);
           values[index] = mean * noise;
@@ -710,9 +702,9 @@
     const injuryRiskMarkup = `
       <div class="forecast-range injury-range">
         <div><span>Expected missed</span><strong>${Number(injuryRisk.expectedMissedGames || 0).toFixed(1)} games</strong></div>
-        <div><span>Weekly onset</span><strong>${(100 * Number(injuryRisk.weeklyHazard || 0)).toFixed(1)}%</strong></div>
-        <div><span>Prior injury record</span><strong>${Number(injuryRisk.historyEpisodes || 0)} episodes · ${Number(injuryRisk.historyMissedGames || 0)} missed</strong></div>
-        <div><span>Size risk factor</span><strong>${Number(injuryRisk.sizeMultiplier || 1).toFixed(2)}×</strong></div>
+        <div><span>Position onset</span><strong>${(100 * Number(injuryRisk.baselineHazard || 0)).toFixed(1)}%</strong></div>
+        <div><span>History coverage</span><strong>Incomplete · excludes IR/PUP</strong></div>
+        <div><span>Decision model</span><strong>Position baseline</strong></div>
       </div>`;
     const rangeMarkup = range.source === "historical rookie analogs" ? `
       <div class="forecast-range">
@@ -732,8 +724,8 @@
     const rosMarkup = `
       <div class="forecast-range">
         <div><span>Actual to date</span><strong>${Number(player.actualPoints || 0).toFixed(1)}</strong></div>
-        <div><span>ROS before availability</span><strong>${Number(player.restOfSeasonPoints ?? player.projectedPoints).toFixed(1)}</strong></div>
-        <div><span>ROS expected</span><strong>${Number(player.restOfSeasonExpectedPoints ?? player.projectedPoints).toFixed(1)}</strong></div>
+        <div><span>ROS projection</span><strong>${Number(player.restOfSeasonExpectedPoints ?? player.projectedPoints).toFixed(1)}</strong></div>
+        <div><span>Scenario expected games</span><strong>${Number(player.restOfSeasonExpectedGames ?? player.projectedGames).toFixed(1)}</strong></div>
         <div><span>Projected finish</span><strong>${Number(player.projectedFinish ?? player.projectedPoints).toFixed(1)}</strong></div>
       </div>`;
     return `
@@ -786,7 +778,7 @@
       : isValidationView() ? hindsight?.rank || "-" : market?.adp?.toFixed(1) || "-";
     const secondaryRankLabel = isRos ? "VOR" : isValidationView() ? "Hindsight" : "ESPN ADP";
     const perGameDenominator = isRos
-      ? Math.max(Number(player.restOfSeasonExpectedGames || 0), 1)
+      ? Math.max(Number(player.projectedGames || 0), 1)
       : Math.max(Number(player.projectedGames || 0), 1);
     const displayedGain = isRos
       ? Number(player.restOfSeasonValueOverReplacement || 0)
@@ -870,9 +862,9 @@
       $("bestMeta").textContent = best
         ? `${best.position} · ${best.team} · ${Number(best.restOfSeasonValueOverReplacement || 0) >= 0 ? "+" : ""}${Number(best.restOfSeasonValueOverReplacement || 0).toFixed(1)} over replacement`
         : "-";
-      $("bestMetricLabel").textContent = "ROS expected";
+      $("bestMetricLabel").textContent = "ROS projection";
       $("bestPoints").textContent = best ? Number(best.restOfSeasonExpectedPoints || 0).toFixed(1) : "-";
-      $("bestMetricUnit").textContent = "availability-adjusted points";
+      $("bestMetricUnit").textContent = "unconditional projected points";
       $("clockLabel").textContent = "Completed through";
       $("clockPick").textContent = data.completedWeek ? `Week ${data.completedWeek}` : "Preseason";
       $("clockMeta").textContent = `${data.projectionSeason} actual points are fixed`;
@@ -930,7 +922,7 @@
     $("pageHeading").textContent = isRos ? "Rest-of-season values" : "Draft recommendations";
     $("draftRankSub").textContent = isRos ? "Expected value · VOR" : isValidationView() ? "Live · Hindsight" : "Live · ESPN ADP";
     $("pointsRankSub").textContent = isRos ? "ROS points · projected finish" : isValidationView() ? "Model · Actual" : "Model";
-    $("projectionHeader").textContent = isRos ? "ROS expected" : "Projection";
+    $("projectionHeader").textContent = isRos ? "ROS projection" : "Projection";
     $("actualHeader").textContent = isRos ? "To date" : "Actual";
     $("valueHeader").textContent = isRos ? "ROS VOR" : "Roster gain";
     $("riskHeader").textContent = isRos ? "Exp. games" : "Survival";
@@ -1053,7 +1045,7 @@
     $("seasonLabel").textContent = data.forecastType === "preseason" ? `${data.projectionSeason} preseason` : data.forecastType === "rest_of_season" ? `${data.projectionSeason} Week ${data.completedWeek}` : `${data.projectionSeason} validation season`;
     $("modelStatus").textContent = `${scoringName()} · ${liveForecast ? "current forecast" : "development model"}`;
     $("methodLabel").textContent = liveForecast
-      ? `${data.scope}. The draft view preserves the Week-0 projection and models ESPN-informed room availability. Rest-of-season value fixes completed results, updates future matchups and roles from current evidence, and discounts expected points for availability risk.`
+      ? `${data.scope}. The draft view preserves the Week-0 projection and models ESPN-informed room availability. Rest-of-season value fixes completed results and updates future matchups and roles from current evidence. Availability scenarios affect lineup and bench value, not the published mean.`
       : `${data.scope}. Recommendations combine game-level forecasts, format-derived replacement value, your roster, and the projected pool at your next snake turn; this remains a ${data.projectionSeason} out-of-sample validation board.`;
     $("footerScope").textContent = `${data.projectionSeason} · ${scoringName()} · ${data.players.length} fantasy-relevant players`;
     $("injuryStatus").textContent = data.injuryReportsAvailable

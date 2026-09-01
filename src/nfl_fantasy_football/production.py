@@ -225,6 +225,8 @@ def current_preseason_games(season: int) -> tuple[pd.DataFrame, str]:
     else:
         for column in injury_columns:
             future[column] = None
+    has_injury_report = future[list(injury_columns)].notna().any(axis=1)
+    future["report_week"] = future["week"].where(has_injury_report)
     future["gameday"] = pd.to_datetime(future["gameday"], errors="coerce")
     future["birth_date"] = pd.to_datetime(future["birth_date"], errors="coerce")
     future["draft_year"] = pd.to_numeric(future["draft_year"], errors="coerce")

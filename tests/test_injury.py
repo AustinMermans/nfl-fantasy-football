@@ -106,4 +106,5 @@ def test_position_fallback_handles_history_with_no_observed_injuries() -> None:
 
     assert profile["injury_weekly_hazard"] > 0
     assert profile["injury_mean_duration"] >= 1
+    assert profile["injury_baseline_duration"] >= 1
     assert profile["injury_weekly_hazard"] >= 0.85 * profile["injury_baseline_hazard"]

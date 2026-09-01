@@ -204,6 +204,7 @@ def estimate_injury_risk_profiles(
                 "injury_mean_duration": mean_duration,
                 "injury_expected_missed_games": 17.0 * unavailable_share,
                 "injury_baseline_hazard": baseline_hazard,
+                "injury_baseline_duration": baseline_duration,
                 "injury_history_episodes": int(row["history_episodes"]),
                 "injury_history_missed_games": int(row["history_missed_games"]),
                 "injury_size_multiplier": size_multiplier,
