@@ -4,6 +4,7 @@
   const data = window.NFL_DRAFT_DATA;
   const marketData = window.NFL_MARKET_DATA || { players: [] };
   const storageKey = "nfl-fantasy-draft-board-v6";
+  const draftLibraryKey = "nfl-fantasy-draft-library-v1";
   const previousStorageKey = "nfl-fantasy-draft-board-v5";
   const legacyStorageKey = "nfl-fantasy-draft-board-v1";
   const defaultConfig = data?.draftConfig || {
@@ -18,8 +19,9 @@
   const state = {
     position: "ALL", query: "", sort: "draft", view: "draft", picks: [], expanded: null,
     teams: Number(defaultConfig.teams || 12), draftSlot: Number(defaultConfig.draftSlot || 1), scenario: "adaptive", policy: "lookahead",
-    scoring: { ...baseScoring },
+    scoring: { ...baseScoring }, activeDraftKey: null, draftName: "",
   };
+  let draftLibrary = {};
   let recommendationCache = { key: null, value: null };
   const roomModels = {
     balanced: { label: "Balanced", prior: 0.40 },
@@ -79,23 +81,86 @@
     return `https://a.espncdn.com/i/teamlogos/nfl/500/${aliases[team] || team.toLowerCase()}.png`;
   };
 
+  const cleanDraftName = (value) => String(value || "").trim().replace(/\s+/g, " ");
+  const draftKeyForName = (value) => cleanDraftName(value).toLocaleLowerCase();
+
+  function draftSnapshot() {
+    return {
+      picks: state.picks, teams: state.teams, draftSlot: state.draftSlot, scenario: state.scenario,
+      policy: state.policy, scoring: state.scoring, activeDraftKey: state.activeDraftKey,
+    };
+  }
+
+  function applyDraftSnapshot(saved, useSavedConfig = true) {
+    if (!saved || !Array.isArray(saved.picks)) return false;
+    const validIds = new Set(data.players.map((player) => player.id));
+    if (useSavedConfig && [8, 10, 12, 14, 16].includes(Number(saved.teams))) state.teams = Number(saved.teams);
+    if (useSavedConfig) {
+      state.draftSlot = Math.max(1, Math.min(state.teams, Number(saved.draftSlot) || state.draftSlot));
+      state.scenario = saved.scenario || state.scenario;
+      state.policy = saved.policy || state.policy;
+      state.scoring = { ...state.scoring, ...(saved.scoring || {}) };
+      if (saved.activeDraftKey && draftLibrary[saved.activeDraftKey]) {
+        state.activeDraftKey = saved.activeDraftKey;
+        state.draftName = cleanDraftName(draftLibrary[saved.activeDraftKey].name || saved.activeDraftKey);
+      }
+    }
+    const seen = new Set();
+    state.picks = saved.picks
+      .filter((pick) => validIds.has(pick.id) && ["mine", "other"].includes(pick.owner) && !seen.has(pick.id) && seen.add(pick.id))
+      .slice(0, state.teams * Number(defaultConfig.rounds || 12))
+      .map((pick, index) => ({ ...pick, overallPick: index + 1, drafterTeam: pick.owner === "mine" ? state.draftSlot : snakeTeam(index + 1) }));
+    return true;
+  }
+
+  function loadDraftLibrary() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(draftLibraryKey));
+      draftLibrary = saved && typeof saved === "object" && !Array.isArray(saved) ? saved : {};
+    } catch (_error) {
+      draftLibrary = {};
+    }
+  }
+
+  function persistDraftLibrary() {
+    localStorage.setItem(draftLibraryKey, JSON.stringify(draftLibrary));
+  }
+
+  function savedDraftEntries() {
+    return Object.entries(draftLibrary).sort(([, left], [, right]) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0));
+  }
+
+  function renderDraftRecordControls(refreshOptions = false) {
+    const select = $("savedDraftSelect");
+    if (refreshOptions) {
+      select.innerHTML = '<option value="">Open saved draft</option>' + savedDraftEntries()
+        .map(([key, draft]) => `<option value="${escapeHtml(key)}">${escapeHtml(draft.name || key)}</option>`).join("");
+    }
+    $("draftNameInput").value = state.draftName;
+    select.value = state.activeDraftKey || "";
+    $("deleteDraftButton").disabled = !state.activeDraftKey;
+    $("draftRecordStatus").textContent = state.activeDraftKey
+      ? `${state.draftName} · autosaving locally`
+      : "Unsaved draft";
+  }
+
+  function syncDraftSetupControls() {
+    $("teamsSelect").value = String(state.teams);
+    $("slotInput").max = state.teams;
+    $("slotInput").value = state.draftSlot;
+    $("scenarioSelect").value = state.scenario;
+    $("policySelect").value = state.policy;
+    $("receptionSelect").value = String(state.scoring.receptions);
+    $("passingTdSelect").value = String(state.scoring.passing_tds);
+    $("interceptionSelect").value = String(state.scoring.passing_interceptions);
+  }
+
   function loadPicks() {
     try {
       const currentSaved = localStorage.getItem(storageKey);
       const saved = JSON.parse(currentSaved || localStorage.getItem(previousStorageKey));
       if (saved && Array.isArray(saved.picks)) {
-        const validIds = new Set(data.players.map((player) => player.id));
-        state.teams = currentSaved && [8, 10, 12, 14, 16].includes(Number(saved.teams)) ? Number(saved.teams) : state.teams;
-        state.draftSlot = Math.max(1, Math.min(state.teams, currentSaved ? Number(saved.draftSlot) || state.draftSlot : state.draftSlot));
-        const seen = new Set();
-        state.picks = saved.picks.filter((pick) => validIds.has(pick.id) && ["mine", "other"].includes(pick.owner) && !seen.has(pick.id) && seen.add(pick.id))
-          .slice(0, state.teams * Number(defaultConfig.rounds || 12))
-          .map((pick, index) => ({ ...pick, overallPick: index + 1, drafterTeam: pick.owner === "mine" ? state.draftSlot : snakeTeam(index + 1) }));
-        if (currentSaved) {
-          state.scenario = saved.scenario || state.scenario;
-          state.policy = saved.policy || state.policy;
-          state.scoring = { ...state.scoring, ...(saved.scoring || {}) };
-        }
+        applyDraftSnapshot(saved, Boolean(currentSaved));
         return;
       }
       const legacy = JSON.parse(localStorage.getItem(legacyStorageKey));
@@ -106,9 +171,13 @@
   }
 
   function savePicks() {
-    localStorage.setItem(storageKey, JSON.stringify({
-      picks: state.picks, teams: state.teams, draftSlot: state.draftSlot, scenario: state.scenario, policy: state.policy, scoring: state.scoring,
-    }));
+    localStorage.setItem(storageKey, JSON.stringify(draftSnapshot()));
+    if (state.activeDraftKey) {
+      draftLibrary[state.activeDraftKey] = {
+        ...draftSnapshot(), name: state.draftName, updatedAt: Date.now(),
+      };
+      persistDraftLibrary();
+    }
   }
 
   function statusFor(id) {
@@ -931,6 +1000,72 @@
   }
 
   function bindEvents() {
+    $("saveDraftButton").addEventListener("click", () => {
+      const input = $("draftNameInput");
+      const name = cleanDraftName(input.value);
+      const key = draftKeyForName(name);
+      input.setCustomValidity("");
+      if (!name) {
+        input.setCustomValidity("Enter a name for this draft.");
+        input.reportValidity();
+        return;
+      }
+      if (draftLibrary[key] && key !== state.activeDraftKey) {
+        input.setCustomValidity("That draft name already exists. Open it from Saved drafts.");
+        input.reportValidity();
+        return;
+      }
+      if (state.activeDraftKey && state.activeDraftKey !== key) delete draftLibrary[state.activeDraftKey];
+      state.activeDraftKey = key;
+      state.draftName = name;
+      savePicks();
+      renderDraftRecordControls(true);
+      $("announcement").textContent = `${name} saved. Future picks will autosave in this browser.`;
+    });
+    $("draftNameInput").addEventListener("input", (event) => event.target.setCustomValidity(""));
+    $("draftNameInput").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        $("saveDraftButton").click();
+      }
+    });
+    $("savedDraftSelect").addEventListener("change", (event) => {
+      const key = event.target.value;
+      const saved = draftLibrary[key];
+      if (!saved || !applyDraftSnapshot(saved)) return;
+      state.activeDraftKey = key;
+      state.draftName = cleanDraftName(saved.name || key);
+      state.expanded = null;
+      syncDraftSetupControls();
+      localStorage.setItem(storageKey, JSON.stringify(draftSnapshot()));
+      renderDraftRecordControls();
+      render();
+      $("announcement").textContent = `${state.draftName} opened with ${state.picks.length} picks.`;
+    });
+    $("newDraftButton").addEventListener("click", () => {
+      const prompt = state.activeDraftKey
+        ? "Start a new blank draft? The active named draft is already saved."
+        : "Start a new blank draft? Current unsaved picks will be cleared.";
+      if (state.picks.length && !window.confirm(prompt)) return;
+      state.picks = [];
+      state.activeDraftKey = null;
+      state.draftName = "";
+      state.expanded = null;
+      savePicks();
+      renderDraftRecordControls();
+      render();
+      $("announcement").textContent = "New unsaved draft started.";
+    });
+    $("deleteDraftButton").addEventListener("click", () => {
+      if (!state.activeDraftKey || !window.confirm(`Delete the saved draft “${state.draftName}”?`)) return;
+      delete draftLibrary[state.activeDraftKey];
+      persistDraftLibrary();
+      state.activeDraftKey = null;
+      state.draftName = "";
+      localStorage.setItem(storageKey, JSON.stringify(draftSnapshot()));
+      renderDraftRecordControls(true);
+      $("announcement").textContent = "Saved record deleted. The current board remains open as an unsaved draft.";
+    });
     $("forecastView").addEventListener("click", (event) => {
       const button = event.target.closest("button[data-view]");
       if (!button || button.dataset.view === state.view) return;
@@ -1027,15 +1162,10 @@
       $("error").hidden = false;
       return;
     }
+    loadDraftLibrary();
     loadPicks();
-    $("teamsSelect").value = String(state.teams);
-    $("slotInput").max = state.teams;
-    $("slotInput").value = state.draftSlot;
-    $("scenarioSelect").value = state.scenario;
-    $("policySelect").value = state.policy;
-    $("receptionSelect").value = String(state.scoring.receptions);
-    $("passingTdSelect").value = String(state.scoring.passing_tds);
-    $("interceptionSelect").value = String(state.scoring.passing_interceptions);
+    syncDraftSetupControls();
+    renderDraftRecordControls(true);
     const liveForecast = ["preseason", "rest_of_season"].includes(data.forecastType);
     $("seasonLabel").textContent = data.forecastType === "preseason" ? `${data.projectionSeason} preseason` : data.forecastType === "rest_of_season" ? `${data.projectionSeason} Week ${data.completedWeek}` : `${data.projectionSeason} validation season`;
     $("modelStatus").textContent = `${scoringName()} · ${liveForecast ? "current forecast" : "development model"}`;

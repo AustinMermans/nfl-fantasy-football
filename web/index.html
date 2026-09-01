@@ -6,11 +6,11 @@
   <meta name="color-scheme" content="light">
   <title>NFL Fantasy Draft Board</title>
   <link rel="preconnect" href="https://a.espncdn.com">
-  <link rel="stylesheet" href="styles.css?v=20260901-ros-v1">
+  <link rel="stylesheet" href="styles.css?v=20260901-drafts-v1">
   <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
   <script src="projections.js?v=20260901-ros-v1"></script>
   <script src="market.js?v=20260901-market-v1"></script>
-  <script src="app.js?v=20260901-ros-v1" defer></script>
+  <script src="app.js?v=20260901-drafts-v1" defer></script>
 </head>
 <body>
   <div id="error" class="fatal" hidden></div>
@@ -49,6 +49,27 @@
             <i data-lucide="rotate-ccw" aria-hidden="true"></i>
           </button>
         </div>
+      </section>
+
+      <section class="draft-record draft-only" aria-label="Saved draft records">
+        <label class="draft-name-field">
+          <span>Draft name</span>
+          <input id="draftNameInput" type="text" maxlength="60" placeholder="e.g. Murphs house" autocomplete="off">
+        </label>
+        <button id="saveDraftButton" class="icon-button" type="button" title="Save named draft" aria-label="Save named draft">
+          <i data-lucide="save" aria-hidden="true"></i>
+        </button>
+        <label class="saved-draft-field">
+          <span>Saved drafts</span>
+          <select id="savedDraftSelect"><option value="">Open saved draft</option></select>
+        </label>
+        <button id="newDraftButton" class="icon-button" type="button" title="Start new draft" aria-label="Start new draft">
+          <i data-lucide="file-plus-2" aria-hidden="true"></i>
+        </button>
+        <button id="deleteDraftButton" class="icon-button" type="button" title="Delete saved draft" aria-label="Delete saved draft" disabled>
+          <i data-lucide="trash-2" aria-hidden="true"></i>
+        </button>
+        <small id="draftRecordStatus">Unsaved draft</small>
       </section>
 
       <section class="draft-setup" aria-label="Draft setup">

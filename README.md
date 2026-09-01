@@ -68,6 +68,10 @@ Run `nfl-fantasy draft-board` to rebuild the retrospective validation view, or
 board, then open `web/index.html`. The interface supports search and position
 filters, expands each player into opponent-aware game-by-game and component
 projections, and stores Mine/Taken actions and undo history in the local browser.
+You can also give a draft a unique name, save multiple draft records, reopen them,
+and continue with automatic local saves after every pick or setting change. Names
+are unique without regard to capitalization. These records stay in that browser
+on that device; the static GitHub Pages site does not sync them between devices.
 
 The published board now runs the frozen component-model choices as a current
 2026 preseason forecast. The production command refits those selected models

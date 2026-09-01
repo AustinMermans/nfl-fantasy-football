@@ -54,12 +54,21 @@ h1 { margin: 0; font-size: 38px; line-height: 1.05; letter-spacing: 0; }
 .view-control button:last-child { min-width: 116px; }
 .ros-view .draft-setup .draft-only { display: none; }
 .ros-view .draft-setup { grid-template-columns: 130px 1fr; }
+.ros-view .draft-record { display: none; }
 .button, .icon-button { height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; color: var(--ink); background: #fff; border: 1px solid #cfd6d1; border-radius: 5px; font-weight: 750; }
 .button { padding: 0 14px; }
 .icon-button { width: 40px; padding: 0; }
 .button svg, .icon-button svg { width: 16px; height: 16px; }
 .button:hover, .icon-button:hover { border-color: #87958d; }
 .button:disabled { color: #a5ada8; cursor: default; background: #f4f5f4; border-color: var(--line); }
+.icon-button:disabled { color: #a5ada8; cursor: default; background: #f4f5f4; border-color: var(--line); }
+
+.draft-record { margin-bottom: 12px; min-height: 62px; display: grid; grid-template-columns: minmax(190px, 280px) 40px minmax(180px, 240px) 40px 40px 1fr; align-items: end; gap: 8px; padding: 10px 16px; background: #fff; border: 1px solid var(--line); }
+.draft-record label { display: grid; gap: 5px; }
+.draft-record label > span { color: var(--muted); font-size: 9px; font-weight: 850; text-transform: uppercase; }
+.draft-record input, .draft-record select { width: 100%; height: 40px; padding: 0 10px; color: var(--ink); background: #fff; border: 1px solid #c8d0cb; border-radius: 4px; outline: none; }
+.draft-record input:focus, .draft-record select:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(23,99,63,.12); }
+.draft-record > small { align-self: center; color: var(--green); font-size: 10px; font-weight: 750; }
 
 .draft-setup { margin-bottom: 12px; display: grid; grid-template-columns: 130px 120px 190px 190px 1fr; align-items: end; gap: 12px; padding: 14px 16px; background: #e9eeeb; border: 1px solid #d7ddd9; }
 .draft-setup label, .roster-needs { display: grid; gap: 6px; }
@@ -185,6 +194,8 @@ h1 { margin: 0; font-size: 38px; line-height: 1.05; letter-spacing: 0; }
 footer { max-width: 1420px; margin: 0 auto; padding: 18px 24px 26px; display: flex; justify-content: space-between; gap: 20px; color: var(--muted); border-top: 1px solid var(--line); font-size: 10px; }
 
 @media (max-width: 1200px) {
+  .draft-record { grid-template-columns: minmax(190px, 1fr) 40px minmax(180px, 1fr) 40px 40px; }
+  .draft-record > small { grid-column: 1 / -1; }
   .draft-setup { grid-template-columns: repeat(2, 1fr); }
   .roster-needs { grid-column: 1 / -1; }
   .scoring-setup { align-items: stretch; flex-wrap: wrap; }
@@ -216,6 +227,13 @@ footer { max-width: 1420px; margin: 0 auto; padding: 18px 24px 26px; display: fl
   .table-shell { order: 3; }
   .draft-setup { order: 4; margin-top: 18px; }
   .scoring-setup { order: 5; }
+  .draft-record { order: 0; grid-template-columns: minmax(0, 1fr) 44px 44px; padding: 12px; }
+  .draft-record .draft-name-field, .draft-record .saved-draft-field { grid-column: 1 / 3; }
+  .draft-record .saved-draft-field { grid-row: 2; }
+  .draft-record #saveDraftButton { grid-column: 3; grid-row: 1; }
+  .draft-record #newDraftButton { grid-column: 3; grid-row: 2; }
+  .draft-record #deleteDraftButton { grid-column: 3; grid-row: 3; }
+  .draft-record > small { grid-column: 1 / 3; grid-row: 3; }
   .draft-setup { grid-template-columns: repeat(2, 1fr); padding: 12px; }
   .draft-setup label:nth-child(n+3), .roster-needs { grid-column: 1 / -1; }
   .scoring-setup { display: grid; grid-template-columns: repeat(2, 1fr); }
@@ -238,7 +256,7 @@ footer { max-width: 1420px; margin: 0 auto; padding: 18px 24px 26px; display: fl
   .segmented-control button { min-width: 0; padding-inline: 7px; }
   .toolbar-fields { align-items: stretch; flex-direction: column; }
   .sort-field select { width: 100%; }
-  .search-field input, .sort-field select, .draft-setup select, .draft-setup input, .scoring-setup select { min-height: 44px; font-size: 16px; }
+  .search-field input, .sort-field select, .draft-setup select, .draft-setup input, .draft-record input, .draft-record select, .scoring-setup select { min-height: 44px; font-size: 16px; }
   .segmented-control button { min-height: 44px; }
   .table-shell { overflow: visible; border: 0; background: transparent; box-shadow: none; }
   .rankings-table, .rankings-table tbody { display: block; width: 100%; min-width: 0; }
