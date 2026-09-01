@@ -16,14 +16,14 @@ and misses; and made field goals in six distance buckets. Fantasy points are not
 a training target. They are calculated after forecasting so scoring changes do
 not require retraining component models.
 
-## Standard scoring assumption
+## Scoring assumption
 
-The active scoring configuration is `traditional_non_ppr`: 0.04 per passing
+The active scoring configuration is half PPR: 0.04 per passing
 yard, four per passing touchdown, minus two per interception, 0.1 per rushing or
 receiving yard, six per rushing/receiving/special-teams touchdown, two per
-two-point conversion, and minus two per lost fumble. Field goals score three
-through 39 yards, four from 40-49, and five from 50 or more; PAT makes score one.
-There are no reception points, yardage bonuses, or missed-kick penalties.
+two-point conversion, 0.5 per reception, and minus two per lost fumble. Field
+goals score three through 39 yards, four from 40-49, five from 50-59, and six
+from 60 or more; PAT makes score one and a missed field goal scores minus one.
 
 The formula matches nflverse's 2024 generic standard score on 99.58% of skill-
 player rows. The remaining 0.42% are lost-fumble rows where this configuration
@@ -131,14 +131,14 @@ RB/WR/TE players, and each position's last selected starter defines replacement
 value. This removes the former fixed replacement ranks and positional weights.
 
 During a draft, the browser persists the Mine/Taken log and league settings,
-computes the snake turn, and runs 16 common-seed simulations of intervening
-opponent selections. Opponents sample from a roster-aware softmax over the
-format-value rank with duplicate-position, starter-need, bench-demand, and room-
+computes the snake turn, and runs 256 common-seed simulations of intervening
+opponent selections. Opponents sample from a roster-aware softmax over a current
+ESPN market center with duplicate-position, starter-need, bench-demand, and room-
 run terms. Each candidate is evaluated by expected managed weekly lineup value
-after the next turn. Twelve common outcome paths cover Weeks 1-18, with bye
+after the next turn. Sixteen common outcome paths cover Weeks 1-18, with bye
 weeks set to zero and the legal lineup reoptimized each week. Empty slots are
 filled at format-derived weekly replacement so an incomplete roster does not
-make raw QB points dominate. Four bench slots cap the roster at 12 players. No
+make raw QB points dominate. Eight bench slots cap the roster at 17 players. No
 realized outcome enters the recommendation.
 
 The outcome paths include persistent random injury absences. Position-level
@@ -149,7 +149,7 @@ duration/severity, and within-position BMI tercile risk ratios use 300 games of
 empirical-Bayes shrinkage. Healthy weeks are rescaled to preserve the original
 player point mean, isolating the value of roster insurance.
 
-Rookie P10/P50/P90 is sampled once per outcome path as a persistent role state.
+Rookie P10/P50/P90 is interpolated once per outcome path with 10% tails as a persistent role state.
 Weekly lognormal shocks use position-specific 2018-2024 expanding-window
 out-of-sample residual scales. The policy is a one-turn quantal-response
 prior, not a calibrated market-survival model. It does not solve the complete

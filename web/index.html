@@ -8,8 +8,9 @@
   <link rel="preconnect" href="https://a.espncdn.com">
   <link rel="stylesheet" href="styles.css?v=20260831-slot-10">
   <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
-  <script src="projections.js?v=20260831-slot-10"></script>
-  <script src="app.js?v=20260831-slot-10" defer></script>
+  <script src="projections.js?v=20260901-model-v2"></script>
+  <script src="market.js?v=20260901-market-v1"></script>
+  <script src="app.js?v=20260901-model-v2" defer></script>
 </head>
 <body>
   <div id="error" class="fatal" hidden></div>
@@ -146,6 +147,7 @@
             <span class="sr-only">Sort projections</span>
             <select id="sortSelect">
               <option value="draft">Model draft order</option>
+              <option value="market">ESPN average draft position</option>
               <option value="actual_draft">Hindsight format value</option>
               <option value="points">Model season points</option>
               <option value="weekly">Model points per game</option>

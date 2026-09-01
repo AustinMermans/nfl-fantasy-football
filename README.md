@@ -36,6 +36,8 @@ nfl-fantasy market-feature-audit --quotes path/to/canonical_quotes.parquet
 nfl-fantasy draft-board
 nfl-fantasy draft-policy-stress-test
 nfl-fantasy preseason-forecast --season 2026 --refresh
+nfl-fantasy preseason-backtest
+nfl-fantasy espn-market --season 2026
 python -m pytest
 ```
 
@@ -86,11 +88,12 @@ starters are allocated first, then FLEX demand goes to the highest projected
 remaining RB/WR/TE players. There are no hand-set QB, TE, or K discounts.
 
 Player value is evaluated as expected points from 18 separately managed weekly
-lineups, with four bench slots. A bench player earns value when he beats a
+lineups, with eight bench slots. A bench player earns value when he beats a
 rostered starter or weekly position-level waiver replacement during a bye or a
 sampled high outcome. Position-specific volatility comes from 2018-2024
-expanding-window out-of-sample residuals. Rookie P10/P50/P90 is sampled as a
-season-level role state, preserving stash upside without a manual rookie bonus.
+expanding-window out-of-sample residuals. Rookie P10/P50/P90 is interpolated as
+a season-level role state with 10% tails, preserving stash upside without a
+manual rookie bonus.
 
 Each outcome path also samples persistent injury absences. Position supplies the
 baseline onset rate; a 34-game empirical-Bayes prior updates it from the player's
@@ -100,19 +103,22 @@ span multiple games and continue through a bye. Availability paths are
 mean-preserving, so this layer changes the insurance value of bench depth without
 silently subtracting injury risk from the published point forecast a second time.
 
-At every Mine/Taken action, the board recomputes the snake state and runs 16
+At every Mine/Taken action, the board recomputes the snake state and runs 256
 common-seed simulations of the intervening picks. Opponents follow a
-roster-aware quantal-response policy over format-value rank. Logged opponent
+roster-aware quantal-response policy centered on current ESPN ADP and rank; the
+ESPN market input never changes our player forecast mean. Logged opponent
 picks update a Bayesian mixture of Balanced, RB-heavy, WR-heavy, Early-QB, and
-Zero-RB room styles. Candidate utility is the expected managed weekly lineup
-value after the next turn. Once the 12-player roster is full, a candidate must
+Zero-RB room styles. Before your turn, all earlier picks are simulated and the
+board aggregates the best state-contingent turn pair; consecutive picks 10/11
+are optimized together. Candidate utility is the expected managed weekly lineup
+value after the next turn. Once the 17-player roster is full, a candidate must
 improve the roster after the weakest asset is dropped.
 Controls support 8-16 teams, any snake slot, Standard/Half/Full PPR, four- or
 six-point passing touchdowns, interception scoring, and RB/WR stress scenarios.
 
-This is a low-confidence Bayesian response model, not a fitted ADP-survival
-model or a Nash-equilibrium claim. The next production step is daily timestamped
-ADP snapshots and rolling-origin calibration against raw draft sequences.
+This is a low-confidence Bayesian response model, not a historically fitted
+ADP-survival model or a Nash-equilibrium claim. Daily ESPN snapshots are now
+deployed; rolling-origin calibration against raw draft sequences remains future work.
 
 `draft-policy-stress-test` replays every snake slot against balanced, RB-run,
 and WR-run opponent policies and reports projected and realized starter points.

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
+from urllib.error import URLError
 
 import pandas as pd
 
@@ -11,6 +13,7 @@ from .data import download_nflverse, load_player_games
 from .draft_board import build_player_rankings, export_draft_board, export_preseason_board
 from .draft_strategy import simulate_draft_policy
 from .evaluation import BacktestSpec, summarize_backtest, walk_forward_backtest
+from .espn import write_espn_market
 from .factor_study import screen_context_factors
 from .features import build_features
 from .fantasy import build_fantasy_point_predictions, evaluate_fantasy_points
@@ -27,6 +30,7 @@ from .market import (
 )
 from .participation import summarize_participation, walk_forward_participation
 from .production import build_preseason_forecasts, write_production_artifacts
+from .preseason import walk_forward_preseason_backtest
 
 
 DEFAULT_TARGETS = ("passing_yards", "rushing_yards", "receiving_yards")
@@ -300,6 +304,37 @@ def _preseason_forecast(args: argparse.Namespace) -> None:
         f"wrote {args.season} preseason forecasts for "
         f"{fantasy['player_id'].nunique()} players to {destination}"
     )
+    market_path = PROJECT_ROOT / "web" / "market.js"
+    if args.refresh or not market_path.exists():
+        try:
+            write_espn_market(args.season, destination=market_path)
+            print(f"wrote ESPN market prior to {market_path}")
+        except (URLError, TimeoutError, json.JSONDecodeError) as error:
+            print(f"warning: ESPN market refresh failed; retained existing prior: {error}")
+
+
+def _preseason_backtest(args: argparse.Namespace) -> None:
+    config = load_config()
+    history = load_player_games(
+        list(range(config.first_season, args.last_test_season + 1)),
+        positions=config.positions,
+    )
+    predictions, by_season, summary = walk_forward_preseason_backtest(
+        history,
+        first_test_season=args.first_test_season,
+        last_test_season=args.last_test_season,
+        seed=config.random_seed,
+    )
+    results = PROJECT_ROOT / "results"
+    predictions.to_parquet(results / "preseason_backtest_predictions.parquet", index=False)
+    by_season.to_csv(results / "preseason_backtest_by_season.csv", index=False)
+    summary.to_csv(results / "preseason_backtest_summary.csv", index=False)
+    print(summary.round(3).to_string(index=False))
+
+
+def _espn_market(args: argparse.Namespace) -> None:
+    destination = write_espn_market(args.season)
+    print(f"wrote ESPN market prior to {destination}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -363,6 +398,13 @@ def build_parser() -> argparse.ArgumentParser:
     preseason.add_argument("--season", type=int, required=True)
     preseason.add_argument("--refresh", action="store_true")
     preseason.set_defaults(handler=_preseason_forecast)
+    preseason_backtest = commands.add_parser("preseason-backtest")
+    preseason_backtest.add_argument("--first-test-season", type=int, default=2018)
+    preseason_backtest.add_argument("--last-test-season", type=int, default=2024)
+    preseason_backtest.set_defaults(handler=_preseason_backtest)
+    espn_market = commands.add_parser("espn-market")
+    espn_market.add_argument("--season", type=int, required=True)
+    espn_market.set_defaults(handler=_espn_market)
     return parser
 
 

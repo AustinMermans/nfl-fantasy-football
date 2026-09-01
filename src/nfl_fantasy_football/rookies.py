@@ -20,6 +20,17 @@ ROOKIE_PRIOR_COLUMNS = (
 )
 
 
+def rookie_role_weights(depth_rank: float) -> tuple[float, float]:
+    """Return cohort and current-role weights for a rookie forecast.
+
+    Draft capital remains useful for starters, while a reserve designation is
+    direct evidence that the player does not currently own a full-season role.
+    """
+    if pd.notna(depth_rank) and float(depth_rank) <= 1:
+        return 0.5, 0.5
+    return 0.25, 0.75
+
+
 def weighted_quantile(
     values: pd.Series, weights: pd.Series, quantiles: tuple[float, ...]
 ) -> np.ndarray:
@@ -64,12 +75,10 @@ def rookie_prior_table(
     experienced = totals[totals["player_games_prior"].gt(0)]
     role_summary = experienced.groupby(["position", "depth_rank"])[
         "predicted_fantasy_points"
-    ].agg(["median", "var"]).rename(columns={"median": "role_center", "var": "role_var"})
+    ].median()
     position_summary = experienced.groupby("position")[
         "predicted_fantasy_points"
-    ].agg(["median", "var"]).rename(
-        columns={"median": "position_center", "var": "position_var"}
-    )
+    ].median()
 
     rows: list[dict[str, object]] = []
     rookie_mask = totals.get("is_rookie", totals["player_games_prior"].eq(0)).astype(bool)
@@ -87,25 +96,15 @@ def rookie_prior_table(
             cohort["actual_points"], weights, (0.10, 0.50, 0.90)
         )
         cohort_mean = float(np.average(cohort["actual_points"], weights=weights))
-        cohort_var = float(
-            np.average((cohort["actual_points"] - cohort_mean) ** 2, weights=weights)
-        )
         effective_n = float(weights.sum() ** 2 / np.square(weights).sum())
 
         role_key = (player.position, player.depth_rank)
         if role_key in role_summary.index:
-            role_center = float(role_summary.loc[role_key, "role_center"])
-            role_var = float(role_summary.loc[role_key, "role_var"])
+            role_center = float(role_summary.loc[role_key])
         else:
-            role_center = float(position_summary.loc[player.position, "position_center"])
-            role_var = float(position_summary.loc[player.position, "position_var"])
-        cohort_var = max(cohort_var, 25.0)
-        role_var = max(role_var if np.isfinite(role_var) else cohort_var, 25.0)
-        cohort_precision = effective_n / cohort_var
-        role_precision = 1.0 / role_var
-        center = (
-            cohort_mean * cohort_precision + role_center * role_precision
-        ) / (cohort_precision + role_precision)
+            role_center = float(position_summary.loc[player.position])
+        cohort_weight, role_weight = rookie_role_weights(player.depth_rank)
+        center = cohort_mean * cohort_weight + role_center * role_weight
         shift = center - q50
         rows.append(
             {

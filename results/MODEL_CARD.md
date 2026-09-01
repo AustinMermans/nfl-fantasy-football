@@ -2,8 +2,8 @@
 
 ## Status
 
-Development selections with a production preseason refit. Traditional non-PPR
-is the default; the board can rescore component forecasts for Standard, Half
+Development selections with a production preseason refit. Half PPR is the
+default; the board can rescore component forecasts for Standard, Half
 PPR, Full PPR, four/six-point passing touchdowns, and interception rules. The draft board now publishes current 2026
 preseason forecasts using frozen model choices refit through completed 2025
 games. The board accepts league size and draft slot, with the traditional lineup
@@ -80,10 +80,10 @@ Learned models improve development RMSE for every new field except PAT makes and
 misses, where the recent-mean baseline remains selected. Full results are in
 `results/expanded_backtest_summary.csv`.
 
-When the selected component forecasts are recombined under traditional non-PPR
-scoring, the fantasy-relevant player-game forecast has MAE `4.13`, RMSE `5.63`,
-and Spearman correlation `0.653`. The recent-component baseline has MAE `4.23`,
-RMSE `5.82`, and Spearman `0.616`, so the model improves RMSE by `3.4%` and
+When the selected component forecasts are recombined under the deployed half-PPR
+scoring, the fantasy-relevant player-game forecast has MAE `4.546`, RMSE `6.085`,
+and Spearman correlation `0.645`. The recent-component baseline has MAE `4.662`,
+RMSE `6.297`, and Spearman `0.607`, so the model improves RMSE by `3.4%` and
 meaningfully improves ordering while remaining only moderately precise at the
 single-game level.
 
@@ -98,8 +98,27 @@ feature or model selection on 2025.
 The current preseason cohort uses the active Week 1 roster and the latest daily
 nflverse depth chart. Every future week is featurized independently against
 completed 2012-2025 history, preventing earlier unplayed games from entering
-later-week rolling features as zeros. Zero-history rookies receive a historical
-position/draft-capital predictive range combined with the current depth-role center.
+later-week rolling features as zeros.
+
+Veteran season totals use a compact Ridge/histogram ensemble built from the
+prior two seasons' points, points per game, games, games played, snap share,
+age, experience, draft pick, career length, and position. For RB/WR/TE/K, 75%
+of the total comes from that season model and 25% from the detailed component
+stack. QBs use the season model total exclusively because the frozen component
+stack failed the preseason QB ordering audit; component forecasts still
+determine weekly matchup shape.
+
+The season-total model is evaluated with an expanding 2018-2024 walk-forward
+window. Against prior-season points, fold-average RMSE improves from `65.024` to
+`58.085`, MAE from `48.685` to `44.302`, and Spearman from `0.646` to `0.673`.
+For the prior-year top decile, RMSE improves from `102.684` to `83.337` and
+Spearman from `0.392` to `0.447`. This is the relevant Week-0 task; the separate
+game-level backtest remains useful for in-season updates.
+
+Zero-history rookies receive a historical position/draft-capital predictive
+range combined explicitly with current depth role. Depth-1 players weight
+cohort and role equally; reserves weight current role 75%. Rookie paths
+interpolate P10/P50/P90 with 10% tails while preserving the fitted mean.
 Experienced reserves whose historical workload exceeds their current nonstarter
 role are capped at that same role median. The adjustment audit is written to
 `results/current_role_adjustments.csv`.
@@ -120,28 +139,33 @@ actual season-points rank; those evaluation benchmarks never enter the live
 recommendation.
 
 Replacement demand is now derived from the selected team count and the default
-1QB/2RB/2WR/1TE/1 FLEX/1K starting lineup. Base slots are allocated first and
+1QB/2RB/2WR/1TE/2 FLEX/1K starting lineup. Base slots are allocated first and
 FLEX slots go to the highest projected remaining RB/WR/TE players. Draft value
 is the unweighted point difference from the last format-derived starter; the
 former fixed QB12/RB30/WR36/TE12/K12 ranks and `0.55/1.0/1.0/0.8/0.05`
 positional multipliers have been removed.
 
 The live layer evaluates the available pool, inferred opponent rosters, the
-user's roster, snake slot, and picks until the next turn. Sixteen common-seed
-Monte Carlo paths sample roster-aware quantal-response opponent choices. Each
-candidate is ranked by expected managed weekly lineup value after the next
-turn. The roster utility uses 16 common outcome paths across Weeks 1-18, sets
+user's roster, snake slot, and picks until the next turn. ESPN ADP and the
+midpoint of ESPN Standard/PPR rank form a separate opponent-availability prior;
+they never alter our player forecast mean. Two hundred fifty-six common-seed
+market paths sample roster-aware quantal-response opponent choices. While the
+user is off the clock, paths include every selection before the user's pick and
+aggregate the best available turn pair. At the 10/11 turn, zero intervening
+picks still triggers pair optimization. After pick 11, lookahead resumes toward
+pick 30. The roster utility uses 16 common outcome paths across Weeks 1-18, sets
 bye weeks to zero, optimizes the legal QB/RB/WR/TE/FLEX/K lineup each week, and
-fills open slots at a position-level waiver replacement. Four bench slots make
-depth valuable only when it enters a weekly lineup; a 13th player must displace
-an existing roster asset.
+fills open slots at a position-level waiver replacement. Eight bench slots make
+depth valuable only when it enters a weekly lineup; an 18th player must displace
+an existing roster asset. Recommendation eligibility enforces QB 4, RB 8, WR 8,
+TE 3, and K 3 league maxima.
 
 Weekly outcome volatility is estimated from 2018-2024 expanding-window
 out-of-sample fantasy-point residuals among the upper half of each position's
 forecast distribution. The central 68% relative-error scales are `0.466` QB,
 `0.637` RB, `0.752` WR, `0.855` TE, and `0.504` K. Simulations use mean-preserving
-lognormal weekly shocks. Rookie P10/P50/P90 is sampled once per path as a
-season-level role state, so breakout value is captured through optimal lineup
+lognormal weekly shocks. Rookie P10/P50/P90 is interpolated once per path as a
+season-level role state with 10% lower and upper tails, so breakout value is captured through optimal lineup
 selection instead of a manual bonus. The UI reports this immediate roster gain
 alongside simulated next-turn survival.
 
@@ -166,7 +190,9 @@ Adaptive opponent behavior is a five-model Bayesian mixture: 40% prior mass on
 Balanced and 15% each on RB-heavy, WR-heavy, Early-QB, and Zero-RB. Each observed
 opponent position updates the mixture by its conditional likelihood over the
 then-available risk set. A simulation samples one archetype from the posterior.
-The assumptions are visible and uncalibrated pending point-in-time draft logs.
+The market center is `70% ESPN ADP + 30% half-PPR rank midpoint`, with our rank
+retained only as a small tie-breaker. The coefficients and room-style updates
+are visible but remain uncalibrated pending point-in-time draft logs.
 
 The 2024 deterministic stress test covers all 12 snake slots. Mean realized
 starter points for next-turn lookahead versus roster-aware greedy selection are
@@ -206,10 +232,16 @@ cross-fold grouped improvement exceeds the screened subset.
   dependence, head-to-head win probability, and championship objectives remain
   absent. The injury approximation has not yet passed a rolling-origin
   calibration study and should not be interpreted as a medical forecast.
-- The live draft policy has a stochastic one-turn prior but lacks fitted
-  point-in-time ADP survival and a preseason walk-forward draft backtest. The current
+- The live draft policy consumes a timestamped ESPN ADP snapshot but lacks a
+  historical fitted survival model and a preseason walk-forward draft backtest. The current
   stress test aggregates weekly forecasts containing in-season information, so
   recommendation ranks should not be interpreted as a proven optimal policy.
+- Historical injury exposure is built from active-roster player-game rows, so
+  IR/inactive weeks can be censored before player recurrence is estimated.
+  Individual injury-history counts are lower-confidence than position baselines.
+- The current depth join covers all displayed players but only about 66% of
+  active RBs and 71% of active WRs. Unmatched players are omitted rather than
+  assigned a fabricated role.
 
 ## Deployment gates
 

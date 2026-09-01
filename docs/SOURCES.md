@@ -8,6 +8,7 @@
 - [nflverse injuries](https://github.com/nflverse/nflverse-data/releases/tag/injuries): weekly reports from 2009.
 - [nflverse schedules](https://github.com/nflverse/nfldata/blob/master/data/games.csv): schedule, result, rest, weather, surface, and consensus closing-line fields.
 - [nflverse player identifiers](https://github.com/nflverse/nflverse-data/releases/tag/players): GSIS, PFR, ESPN, PFF, and other cross-source IDs.
+- [ESPN Fantasy Football player pool](https://fantasy.espn.com/football/players/projections): current ADP, Standard/PPR rank, injury status, and ESPN season projection. ADP/rank are deployed only as the opponent-selection prior; they do not alter this project's forecast mean.
 
 nflverse publishes these automated assets in Parquet and other formats. Player
 stats update daily during the season, rosters update daily, and snap counts are

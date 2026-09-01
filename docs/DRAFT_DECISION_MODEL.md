@@ -20,8 +20,8 @@ a historical analog distribution using same-position rookie seasons from
 combined with the current depth-role center. The UI exposes P10, P50, P90, and
 effective sample size.
 
-The range is empirical and uncalibrated. The deployed simulation samples one
-P10/P50/P90 rookie role state per season path and combines it with weekly
+The range is empirical and uncalibrated. The deployed simulation interpolates
+one P10/P50/P90 rookie role state per season path with 10% tails and combines it with weekly
 outcome noise. It does not yet impose a shared team opportunity budget. The next
 version should estimate a smoothed rookie role state, update it with preseason
 depth, and resample entire historical component trajectories within that role.
@@ -32,19 +32,21 @@ For each candidate `a`, the board estimates:
 
 `Q(state, a) = E[managed weekly points after a and the next snake turn]`.
 
-It uses 16 common-seed Monte Carlo paths. Each intervening manager samples an
-available player from a softmax over format-value rank, unfilled starter need,
+It uses 256 common-seed market paths. Each intervening manager samples an
+available player from a softmax over ESPN ADP/custom-rank market center, unfilled starter need,
 duplicate-position cost, RB/WR bench demand, and a sampled room archetype.
-The candidate with the largest expected two-turn weekly-lineup value ranks first.
-The board also reports the fraction of baseline paths in which each player
-survives to the next turn.
+While the user waits, the simulator includes the entire prefix before the user's
+pick and ranks players by how often they enter the optimal available turn pair.
+At a consecutive snake turn it maximizes both picks even when zero opponents
+select between them. The board reports survival to the user's pick while off
+clock and return survival while on clock.
 
 For every candidate, 16 common outcome paths run across Weeks 1-18. A missing
 scheduled game is a bye and scores zero. Within each week, the simulator chooses
 the best legal QB/RB/WR/TE/FLEX/K lineup from the roster and fills empty slots at
 the position's format-derived weekly replacement level. Position-specific
 lognormal volatility is fit from 2018-2024 expanding-window out-of-sample
-residuals. Four explicit bench slots cap the roster at 12 players; once full,
+residuals. Eight explicit bench slots cap the roster at 17 players; once full,
 the candidate is valued only after optimally dropping one current player.
 
 Every path also samples persistent injury-availability states. The position
@@ -67,10 +69,10 @@ early pick on a position whose replacement pool is expected to remain available.
 This is a declared fallback assumption until the opponent model is fitted to
 timestamped draft sequences.
 
-This is a transparent quantal-response prior. Its probabilities are not yet
-calibrated because the repository does not contain point-in-time historical
-draft-room logs. Market ADP belongs in this opponent-choice layer, not in the
-player-value forecast.
+This is a transparent quantal-response prior. Current ESPN ADP and Standard/PPR
+ranks are ingested daily into the opponent-choice layer, not the player-value
+forecast. Its probabilities are not yet historically calibrated because the
+repository does not contain point-in-time draft-room logs.
 
 The adaptive room model begins with a 40% Balanced prior and 15% each on
 RB-heavy, WR-heavy, Early-QB, and Zero-RB. For every logged opponent pick, it

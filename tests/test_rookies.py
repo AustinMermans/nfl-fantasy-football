@@ -3,6 +3,7 @@ import pandas as pd
 from nfl_fantasy_football.rookies import (
     historical_rookie_seasons,
     rookie_prior_table,
+    rookie_role_weights,
     weighted_quantile,
 )
 
@@ -14,6 +15,11 @@ def test_weighted_quantile_moves_toward_high_weight_observation() -> None:
         (0.5,),
     )
     assert result[0] > 50.0
+
+
+def test_rookie_reserve_role_gets_more_weight_than_draft_cohort() -> None:
+    assert rookie_role_weights(1) == (0.5, 0.5)
+    assert rookie_role_weights(2) == (0.25, 0.75)
 
 
 def test_rookie_history_only_uses_first_season() -> None:

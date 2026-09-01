@@ -14,6 +14,7 @@ from .fantasy import DEPLOYMENT_SELECTION, KEYS, _selected_long
 from .features import build_features, feature_sets
 from .injury import estimate_injury_risk_profiles
 from .model import RecentMeanRegressor, build_estimator
+from .preseason import COMPONENT_WEIGHT_BY_POSITION, fit_preseason_means
 from .rookies import rookie_prior_table
 from .scoring import score_components, scoring_fields
 
@@ -329,6 +330,7 @@ def apply_current_role_adjustments(
                 "draft_year",
                 "years_exp",
                 "season",
+                "age",
             ]
         ]
     )
@@ -336,6 +338,9 @@ def apply_current_role_adjustments(
         "years_exp"
     ].eq(0)
     rookie_priors = rookie_prior_table(history, totals, roles)
+    preseason_means = fit_preseason_means(
+        history, future_features, season=int(roles["season"].iloc[0])
+    )
     totals = totals.merge(roles, on="player_id", validate="one_to_one")
     experienced = totals[totals["player_games_prior"].gt(0)]
     role_prior = experienced.groupby(
@@ -348,7 +353,9 @@ def apply_current_role_adjustments(
     ].median()
     adjustments = totals.merge(
         role_prior, on=["position", "depth_rank"], how="left"
-    ).merge(rookie_priors, on="player_id", how="left")
+    ).merge(rookie_priors, on="player_id", how="left").merge(
+        preseason_means, on="player_id", how="left"
+    )
     adjustments["role_prior_points"] = adjustments["role_prior_points"].fillna(
         adjustments["position"].map(position_prior)
     )
@@ -360,6 +367,16 @@ def apply_current_role_adjustments(
         adjustments["role_prior_points"]
     )
     adjustments["adjusted_points"] = adjustments["predicted_fantasy_points"]
+    veteran_shrinkage = ~rookie & adjustments["preseason_mean"].notna()
+    component_weight = adjustments["position"].map(
+        COMPONENT_WEIGHT_BY_POSITION
+    ).fillna(0.25)
+    adjustments.loc[veteran_shrinkage, "adjusted_points"] = (
+        component_weight.loc[veteran_shrinkage]
+        * adjustments.loc[veteran_shrinkage, "predicted_fantasy_points"]
+        + (1.0 - component_weight.loc[veteran_shrinkage])
+        * adjustments.loc[veteran_shrinkage, "preseason_mean"]
+    )
     adjustments.loc[rookie, "adjusted_points"] = adjustments.loc[
         rookie, "rookie_prior_mean"
     ].fillna(adjustments.loc[rookie, "role_prior_points"])
@@ -367,6 +384,9 @@ def apply_current_role_adjustments(
         ~rookie & reserve & above_role, "role_prior_points"
     ]
     adjustments["adjustment_reason"] = "none"
+    adjustments.loc[veteran_shrinkage, "adjustment_reason"] = (
+        "preseason season-total shrinkage"
+    )
     adjustments.loc[rookie, "adjustment_reason"] = "empirical rookie prior"
     adjustments.loc[~rookie & reserve & above_role, "adjustment_reason"] = (
         "reserve-role cap"
@@ -390,6 +410,7 @@ def apply_current_role_adjustments(
             "predicted_fantasy_points",
             "role_prior_points",
             "adjusted_points",
+            "preseason_mean",
             "role_scale",
             "adjustment_reason",
             "rookie_p10",

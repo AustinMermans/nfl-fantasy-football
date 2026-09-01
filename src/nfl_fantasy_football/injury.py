@@ -178,7 +178,17 @@ def estimate_injury_risk_profiles(
         history_hazard = (
             float(row["history_episodes"]) + player_prior_games * baseline_hazard
         ) / (float(row["exposure"]) + player_prior_games)
-        weekly_hazard = float(np.clip(history_hazard * size_multiplier, 0.005, 0.08))
+        # Inactive/IR weeks can be absent from the active-roster exposure table.
+        # Do not interpret a zero recorded episode count as evidence below the
+        # position baseline until full roster-week exposure is available.
+        recurrence_hazard = max(baseline_hazard, history_hazard)
+        weekly_hazard = float(
+            np.clip(
+                max(0.85 * baseline_hazard, recurrence_hazard * size_multiplier),
+                0.005,
+                0.08,
+            )
+        )
         mean_duration = (
             float(row["history_missed_games"])
             + duration_prior_episodes * baseline_duration

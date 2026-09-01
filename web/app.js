@@ -2,11 +2,13 @@
   "use strict";
 
   const data = window.NFL_DRAFT_DATA;
+  const marketData = window.NFL_MARKET_DATA || { players: [] };
   const storageKey = "nfl-fantasy-draft-board-v6";
   const previousStorageKey = "nfl-fantasy-draft-board-v5";
   const legacyStorageKey = "nfl-fantasy-draft-board-v1";
   const defaultConfig = data?.draftConfig || {
-    teams: 10, draftSlot: 10, rosterSlots: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 2, K: 1 }, benchSlots: 8, rounds: 17,
+    teams: 10, draftSlot: 10, rosterSlots: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 2, K: 1 },
+    rosterMaximums: { QB: 4, RB: 8, WR: 8, TE: 3, K: 3 }, benchSlots: 8, rounds: 17,
   };
   const baseScoring = data?.scoringWeights || {
     passing_yards: 0.04, passing_tds: 4, passing_interceptions: -2,
@@ -30,6 +32,21 @@
   const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (char) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;",
   })[char]);
+  const normalizedName = (value) => String(value || "").toLowerCase().normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "").replace(/\b(jr|sr|ii|iii|iv)\b/g, "").replace(/[^a-z0-9]/g, "");
+  const marketByPlayer = new Map((marketData.players || []).map((player) => [
+    `${normalizedName(player.name)}|${player.position}`, player,
+  ]));
+  const marketFor = (player) => marketByPlayer.get(`${normalizedName(player.name)}|${player.position}`);
+  const marketRankFor = (player, metrics) => {
+    const market = marketFor(player);
+    return Number(
+      market?.marketCenter
+      || market?.adp
+      || market?.halfPprRank
+      || Math.max(220, metrics.get(player.id).rank),
+    );
+  };
 
   const positionClass = (position) => `position position-${position.toLowerCase()}`;
   const pointsFor = (player) => {
@@ -174,10 +191,14 @@
   function rookieRoleMultiplier(player, scenario) {
     const range = scaledRange(player);
     if (range.source !== "historical rookie analogs") return 1;
-    const average = 0.25 * range.p10 + 0.5 * range.p50 + 0.25 * range.p90;
+    const average = 0.3 * range.p10 + 0.4 * range.p50 + 0.3 * range.p90;
     if (average <= 0) return 1;
     const draw = hashUniform(`${player.id}-${scenario}-rookie`);
-    const outcome = draw < 0.25 ? range.p10 : draw < 0.75 ? range.p50 : range.p90;
+    let outcome;
+    if (draw <= 0.1) outcome = range.p10;
+    else if (draw < 0.5) outcome = range.p10 + ((draw - 0.1) / 0.4) * (range.p50 - range.p10);
+    else if (draw < 0.9) outcome = range.p50 + ((draw - 0.5) / 0.4) * (range.p90 - range.p50);
+    else outcome = range.p90;
     return outcome / average;
   }
 
@@ -332,7 +353,7 @@
     const round = Math.floor((overallPick - 1) / state.teams) + 1;
     const counts = rosters.get(manager) || {};
     const slots = defaultConfig.rosterSlots;
-    let utility = -0.075 * metrics.get(player.id).rank;
+    let utility = -0.28 * marketRankFor(player, metrics) - 0.01 * metrics.get(player.id).rank;
     if (player.position === "K" && round < Number(defaultConfig.rounds || 12)) utility -= 12;
     if ((counts[player.position] || 0) < (slots[player.position] || 0)) utility += 1.0;
     if (["QB", "TE", "K"].includes(player.position) && (counts[player.position] || 0) >= (slots[player.position] || 0)) utility -= 0.9;
@@ -358,7 +379,7 @@
       const overallPick = Number(pick.overallPick || index + 1);
       const manager = Number(pick.drafterTeam || snakeTeam(overallPick));
       if (pick.owner === "other") {
-        let riskSet = [...pool].sort((a, b) => metrics.get(a.id).rank - metrics.get(b.id).rank).slice(0, 180);
+        let riskSet = [...pool].sort((a, b) => marketRankFor(a, metrics) - marketRankFor(b, metrics)).slice(0, 220);
         if (!riskSet.some((item) => item.id === player.id)) riskSet.push(player);
         Object.keys(roomModels).forEach((archetype) => {
           const utilities = riskSet.map((item) => opponentUtility(item, overallPick, manager, metrics, rosters, archetype));
@@ -392,8 +413,8 @@
   function stochasticOpponentPicks(available, candidateId, count, afterPick, metrics, posterior, seed) {
     const marketPool = available
       .filter((player) => player.id !== candidateId)
-      .sort((a, b) => metrics.get(a.id).rank - metrics.get(b.id).rank)
-      .slice(0, 180);
+      .sort((a, b) => marketRankFor(a, metrics) - marketRankFor(b, metrics))
+      .slice(0, 220);
     const deepPool = available.filter((player) => !marketPool.includes(player) && player.id !== candidateId);
     const rosters = observedRosterCounts();
     const random = seededRandom(seed);
@@ -435,30 +456,92 @@
     const onClock = snakeTeam(currentPick) === state.draftSlot;
     const decisionPick = onClock ? currentPick : nextPickForTeam(currentPick - 1);
     const nextTurn = nextPickForTeam(decisionPick);
+    const prefixPicks = onClock ? 0 : decisionPick - currentPick;
     const opponentPicks = nextTurn - decisionPick - 1;
-    const simulationCount = 16;
-    const seeds = Array.from({ length: simulationCount }, (_, index) => 104729 + index * 1543 + state.picks.length * 37);
+    const marketSimulationCount = 256;
+    const lookaheadSimulationCount = 32;
+    const seeds = Array.from({ length: marketSimulationCount }, (_, index) => 104729 + index * 1543 + state.picks.length * 37);
+    const baselineCount = onClock ? opponentPicks : prefixPicks;
+    const baselineAfterPick = onClock ? decisionPick : currentPick - 1;
     const baselineSurvival = new Map(available.map((player) => [player.id, 0]));
-    seeds.forEach((seed) => {
-      const survivors = new Set(stochasticOpponentPicks(available, "", opponentPicks, decisionPick, metrics, posterior, seed).survivors.map((player) => player.id));
+    const baselineSimulations = seeds.map((seed) => stochasticOpponentPicks(
+      available, "", baselineCount, baselineAfterPick, metrics, posterior, seed,
+    ));
+    baselineSimulations.forEach((simulation) => {
+      const survivors = new Set(simulation.survivors.map((player) => player.id));
       available.forEach((player) => { if (survivors.has(player.id)) baselineSurvival.set(player.id, baselineSurvival.get(player.id) + 1); });
     });
     const shortlist = new Set([
-      ...available.sort((a, b) => metrics.get(a.id).rank - metrics.get(b.id).rank).slice(0, 48).map((player) => player.id),
+      ...[...available].sort((a, b) => metrics.get(a.id).rank - metrics.get(b.id).rank).slice(0, 48).map((player) => player.id),
       ...["QB", "RB", "WR", "TE", "K"].flatMap((position) => available
         .filter((player) => player.position === position)
         .sort((a, b) => metrics.get(a.id).rank - metrics.get(b.id).rank)
         .slice(0, 6).map((player) => player.id)),
     ]);
     const withoutCandidate = managedRosterValue(myRoster, weekly, rosterCache);
+    const currentRound = Math.floor((decisionPick - 1) / state.teams) + 1;
+    const rosterCapacity = Object.values(defaultConfig.rosterSlots).reduce((sum, value) => sum + Number(value), 0)
+      + Number(defaultConfig.benchSlots || 4);
+    const rosterCounts = myRoster.reduce((counts, player) => ({
+      ...counts, [player.position]: (counts[player.position] || 0) + 1,
+    }), {});
+    const canAddPlayers = (players) => {
+      const additions = players.reduce((counts, player) => ({
+        ...counts, [player.position]: (counts[player.position] || 0) + 1,
+      }), {});
+      return Object.entries(additions).every(([position, count]) => (
+        (rosterCounts[position] || 0) + count
+        <= Number(defaultConfig.rosterMaximums?.[position] || rosterCapacity)
+      ));
+    };
+    const evaluateTurnPair = rosterCapacity - myRoster.length >= 2 && (!onClock || opponentPicks === 0);
+    const pairPoolById = new Map([
+      ...[...available].sort((a, b) => metrics.get(a.id).rank - metrics.get(b.id).rank).slice(0, 24),
+      ...[...available].sort((a, b) => marketRankFor(a, metrics) - marketRankFor(b, metrics)).slice(0, 12),
+    ].filter((player) => canAddPlayers([player]) && (player.position !== "K" || currentRound >= Number(defaultConfig.rounds || 12))).map((player) => [player.id, player]));
+    const pairPool = evaluateTurnPair ? [...pairPoolById.values()] : [];
+    const pairValues = [];
+    for (let first = 0; first < pairPool.length; first += 1) {
+      for (let second = first + 1; second < pairPool.length; second += 1) {
+        const players = [pairPool[first], pairPool[second]];
+        if (!canAddPlayers(players)) continue;
+        pairValues.push({
+          players,
+          value: managedRosterValue([...myRoster, ...players], weekly, rosterCache),
+        });
+      }
+    }
+    const pairSelections = new Map(available.map((player) => [player.id, 0]));
+    const selectedPairs = new Map();
+    if (!onClock) {
+      baselineSimulations.forEach((simulation) => {
+        const survivors = new Set(simulation.survivors.map((player) => player.id));
+        const bestPair = pairValues
+          .filter((pair) => pair.players.every((player) => survivors.has(player.id)))
+          .sort((a, b) => b.value - a.value)[0];
+        if (!bestPair) return;
+        bestPair.players.forEach((player) => pairSelections.set(player.id, pairSelections.get(player.id) + 1));
+        const pairKey = bestPair.players.map((player) => player.id).sort().join("|");
+        selectedPairs.set(pairKey, (selectedPairs.get(pairKey) || 0) + 1);
+      });
+    }
     const candidates = available.map((candidate) => {
       const immediateValue = managedRosterValue([...myRoster, candidate], weekly, rosterCache);
-      const currentRound = Math.floor((decisionPick - 1) / state.teams) + 1;
-      const timingEligible = candidate.position !== "K" || currentRound >= Number(defaultConfig.rounds || 12);
+      const underPositionMaximum = (rosterCounts[candidate.position] || 0)
+        < Number(defaultConfig.rosterMaximums?.[candidate.position] || rosterCapacity);
+      const timingEligible = underPositionMaximum
+        && (candidate.position !== "K" || currentRound >= Number(defaultConfig.rounds || 12));
       let decisionValue = immediateValue;
-      if (state.policy === "lookahead" && shortlist.has(candidate.id) && opponentPicks > 0) {
+      if (state.policy === "lookahead" && onClock && shortlist.has(candidate.id) && opponentPicks === 0) {
+        decisionValue = Math.max(
+          immediateValue,
+          ...pairPool.filter((partner) => partner.id !== candidate.id).map((partner) => managedRosterValue(
+            [...myRoster, candidate, partner], weekly, rosterCache,
+          )),
+        );
+      } else if (state.policy === "lookahead" && onClock && shortlist.has(candidate.id) && opponentPicks > 0) {
         let total = 0;
-        seeds.forEach((seed) => {
+        seeds.slice(0, lookaheadSimulationCount).forEach((seed) => {
           const simulation = stochasticOpponentPicks(available, candidate.id, opponentPicks, decisionPick, metrics, posterior, seed);
           const nextOptions = ["QB", "RB", "WR", "TE", "K"].map((position) => simulation.survivors
             .filter((player) => player.position === position)
@@ -470,7 +553,7 @@
             : immediateValue;
           total += bestContinuation;
         });
-        decisionValue = total / simulationCount;
+        decisionValue = total / lookaheadSimulationCount;
       }
       return {
         player: candidate,
@@ -478,12 +561,19 @@
         immediateValue,
         immediateGain: immediateValue - withoutCandidate,
         protectedGain: decisionValue - withoutCandidate,
-        survivalProbability: Number(baselineSurvival.get(candidate.id) || 0) / simulationCount,
+        survivalProbability: Number(baselineSurvival.get(candidate.id) || 0) / marketSimulationCount,
+        pairSelectionProbability: Number(pairSelections.get(candidate.id) || 0) / marketSimulationCount,
         baseValue: metrics.get(candidate.id).value,
         timingEligible,
       };
     });
     candidates.sort((a, b) => {
+      if (!onClock) {
+        return Number(b.timingEligible) - Number(a.timingEligible)
+          || b.pairSelectionProbability - a.pairSelectionProbability
+          || (b.survivalProbability * b.immediateGain) - (a.survivalProbability * a.immediateGain)
+          || b.baseValue - a.baseValue;
+      }
       if (state.policy === "lookahead") {
         return Number(b.timingEligible) - Number(a.timingEligible)
           || b.decisionValue - a.decisionValue
@@ -499,7 +589,17 @@
     const pointRanks = new Map([...data.players]
       .sort((a, b) => pointsFor(b) - pointsFor(a) || a.name.localeCompare(b.name))
       .map((player, index) => [player.id, index + 1]));
-    const result = { candidates, byId: new Map(candidates.map((candidate) => [candidate.player.id, candidate])), currentPick, decisionPick, nextTurn, opponentPicks, onClock, draftComplete, metrics, pointRanks, posterior };
+    let recommendedPairKey = [...selectedPairs.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+    if (!recommendedPairKey && onClock && opponentPicks === 0 && candidates.length) {
+      const leadId = candidates[0].player.id;
+      recommendedPairKey = pairValues
+        .filter((pair) => pair.players.some((player) => player.id === leadId))
+        .sort((a, b) => b.value - a.value)[0]?.players.map((player) => player.id).sort().join("|");
+    }
+    const recommendedPair = recommendedPairKey
+      ? recommendedPairKey.split("|").map((id) => data.players.find((player) => player.id === id)).filter(Boolean)
+      : [];
+    const result = { candidates, byId: new Map(candidates.map((candidate) => [candidate.player.id, candidate])), currentPick, decisionPick, nextTurn, prefixPicks, opponentPicks, onClock, draftComplete, metrics, pointRanks, posterior, recommendedPair };
     recommendationCache = { key: cacheKey, value: result };
     return result;
   }
@@ -513,6 +613,7 @@
     });
     const sorters = {
       draft: (a, b) => (recommendations.byId.get(a.id)?.rank || 9999) - (recommendations.byId.get(b.id)?.rank || 9999) || recommendations.metrics.get(a.id).rank - recommendations.metrics.get(b.id).rank,
+      market: (a, b) => marketRankFor(a, recommendations.metrics) - marketRankFor(b, recommendations.metrics),
       actual_draft: (a, b) => actualMetrics.get(a.id).rank - actualMetrics.get(b.id).rank,
       points: (a, b) => pointsFor(b) - pointsFor(a) || a.rank - b.rank,
       weekly: (a, b) => (pointsFor(b) / b.projectedGames) - (pointsFor(a) / a.projectedGames) || a.rank - b.rank,
@@ -587,6 +688,7 @@
 
   function playerDetail(player) {
     const range = scaledRange(player);
+    const market = marketFor(player);
     const injury = [player.injury?.gameStatus, player.injury?.practiceStatus, player.injury?.bodyPart].filter(Boolean).join(" · ");
     const injuryRisk = player.injuryRisk || {};
     const injuryRiskMarkup = `
@@ -603,11 +705,20 @@
         <div><span>Upside P90</span><strong>${range.p90.toFixed(1)}</strong></div>
         <div><span>Effective analogs</span><strong>${range.effectiveSample.toFixed(0)}</strong></div>
       </div>` : "";
+    const expertPoints = market?.espnHalfPprPoints == null ? NaN : Number(market.espnHalfPprPoints);
+    const expertMarkup = Number.isFinite(expertPoints) ? `
+      <div class="forecast-range">
+        <div><span>Our half-PPR</span><strong>${Number(player.projectedPoints).toFixed(1)}</strong></div>
+        <div><span>ESPN half-PPR est.</span><strong>${expertPoints.toFixed(1)}</strong></div>
+        <div><span>Model difference</span><strong>${(Number(player.projectedPoints) - expertPoints >= 0 ? "+" : "")}${(Number(player.projectedPoints) - expertPoints).toFixed(1)}</strong></div>
+        <div><span>ESPN ADP</span><strong>${market.adp == null ? "-" : Number(market.adp).toFixed(1)}</strong></div>
+      </div>` : "";
     return `
       <div class="player-detail">
         <div class="season-components">
           <span class="detail-label">Projected season components</span>
           <div class="stat-grid">${statItems(player)}</div>
+          ${expertMarkup}
           ${rangeMarkup}
           ${injuryRiskMarkup}
           ${injury ? `<span class="detail-label">Injury report · ${escapeHtml(injury)}</span>` : ""}
@@ -630,30 +741,32 @@
     const recommendation = recommendations.byId.get(player.id);
     const liveRank = recommendation?.rank || recommendations.metrics.get(player.id).rank;
     const hindsight = actualMetrics?.get(player.id);
+    const market = marketFor(player);
     const displayedDraftValue = state.sort === "actual_draft" && hindsight ? hindsight.value : recommendation?.survivalProbability;
     const projectedPoints = pointsFor(player);
     const range = scaledRange(player);
     const rookieMeta = range.source === "historical rookie analogs" ? ` · rookie P10–P90 ${range.p10.toFixed(0)}–${range.p90.toFixed(0)}` : "";
     const injuryMeta = player.injury?.gameStatus ? ` · ${escapeHtml(player.injury.gameStatus)}` : "";
+    const marketMeta = !data.hasActuals && market?.adp ? ` · ESPN ADP ${Number(market.adp).toFixed(1)}` : "";
     const actionsDisabled = status !== "available" || recommendations.draftComplete;
     return `
       <tr class="player-row${rowClass}" data-id="${escapeHtml(player.id)}">
         <td class="rank-cell">
           <div class="rank-pair">
             <span><strong>${liveRank}</strong><small>Live</small></span>
-            <span class="actual-rank"><strong>${hindsight?.rank || "-"}</strong><small>Hindsight</small></span>
+            <span class="actual-rank"><strong>${data.hasActuals ? hindsight?.rank || "-" : market?.adp?.toFixed(1) || "-"}</strong><small>${data.hasActuals ? "Hindsight" : "ESPN ADP"}</small></span>
           </div>
         </td>
         <td class="rank-cell">
-          <div class="rank-pair">
+          <div class="rank-pair points-rank-pair">
             <span><strong>${recommendations.pointRanks.get(player.id)}</strong><small>Model</small></span>
-            <span class="actual-rank"><strong>${data.hasActuals ? player.actualRank : "-"}</strong><small>Actual</small></span>
+            <span class="actual-rank actual-points-rank"><strong>${data.hasActuals ? player.actualRank : "-"}</strong><small>Actual</small></span>
           </div>
         </td>
         <td>
           <div class="player-cell">
             <img src="${teamLogo(player.team)}" alt="" onerror="this.hidden=true">
-            <span><strong>${escapeHtml(player.name)}</strong><small>${player.projectedGames} projected games${player.depthRank ? ` · depth ${player.position}${player.depthRank}` : ""}${rookieMeta}${injuryMeta}</small></span>
+            <span><strong>${escapeHtml(player.name)}</strong><small>${player.projectedGames} projected games${player.depthRank ? ` · depth ${player.position}${player.depthRank}` : ""}${marketMeta}${rookieMeta}${injuryMeta}</small></span>
           </div>
         </td>
         <td><span class="${positionClass(player.position)}">${escapeHtml(player.position)}</span></td>
@@ -662,7 +775,7 @@
         <td class="number-cell actual-total actual-column">${data.hasActuals ? player.actualPoints.toFixed(1) : "-"}</td>
         <td class="number-cell">${(projectedPoints / player.projectedGames).toFixed(2)}</td>
         <td class="number-cell draft-value" title="Expected managed weekly lineup points added to your current roster">${recommendation ? `${recommendation.immediateGain >= 0 ? "+" : ""}${recommendation.immediateGain.toFixed(1)}` : "-"}</td>
-        <td class="number-cell draft-value" title="${state.sort === "actual_draft" ? "Hindsight value over the format-derived replacement player" : "Estimated probability of surviving to your next pick under the selected opponent scenario"}">${state.sort === "actual_draft" ? `${displayedDraftValue > 0 ? "+" : ""}${displayedDraftValue.toFixed(1)}` : recommendation ? `${Math.round(displayedDraftValue * 100)}%` : "-"}</td>
+        <td class="number-cell draft-value" title="${state.sort === "actual_draft" ? "Hindsight value over the format-derived replacement player" : `Estimated probability of remaining available to pick #${recommendations.onClock ? recommendations.nextTurn : recommendations.decisionPick}`}">${state.sort === "actual_draft" ? `${displayedDraftValue > 0 ? "+" : ""}${displayedDraftValue.toFixed(1)}` : recommendation ? `${Math.round(displayedDraftValue * 100)}%` : "-"}</td>
         <td>${statusMarkup(player, status)}</td>
         <td class="actions-cell">
           <div class="row-actions">
@@ -706,10 +819,13 @@
     const bestRecommendation = best ? recommendations.byId.get(best.id) : null;
     $("bestHeading").textContent = recommendations.draftComplete ? "Draft complete" : recommendations.onClock ? "Pick now" : `Target for pick #${recommendations.decisionPick}`;
     $("bestName").textContent = recommendations.draftComplete ? "Roster locked" : best?.name || "No player available";
-    $("bestMeta").textContent = best ? `${best.position} · ${best.team} · ${scoringName()}` : "-";
+    const pairNames = recommendations.recommendedPair.map((player) => player.name).join(" + ");
+    $("bestMeta").textContent = pairNames
+      ? `${recommendations.onClock ? "Recommended turn pair" : "Most frequent turn pair"} · ${pairNames}`
+      : best ? `${best.position} · ${best.team} · ${scoringName()}` : "-";
     $("bestPoints").textContent = recommendations.draftComplete ? "-" : bestRecommendation ? `${Math.round(bestRecommendation.survivalProbability * 100)}%` : "-";
-    $("bestMetricLabel").textContent = "Next-turn survival";
-    $("bestMetricUnit").textContent = `16 opponent-pick simulations to #${recommendations.nextTurn}`;
+    $("bestMetricLabel").textContent = recommendations.onClock ? "Return survival" : "Survival to my pick";
+    $("bestMetricUnit").textContent = `256 ESPN-market simulations to #${recommendations.onClock ? recommendations.nextTurn : recommendations.decisionPick}`;
     $("availableCount").textContent = data.players.filter((player) => statusFor(player.id) === "available").length;
     $("mineCount").textContent = data.players.filter((player) => statusFor(player.id) === "mine").length;
     $("takenCount").textContent = data.players.filter((player) => statusFor(player.id) === "other").length;
@@ -839,7 +955,7 @@
     $("seasonLabel").textContent = data.forecastType === "preseason" ? `${data.projectionSeason} preseason` : `${data.projectionSeason} validation season`;
     $("modelStatus").textContent = `${scoringName()} · ${data.forecastType === "preseason" ? "current forecast" : "development model"}`;
     $("methodLabel").textContent = data.forecastType === "preseason"
-      ? `${data.scope}. Models refit through ${data.trainingThrough}; active rosters, starter depth, schedule, and game lines as of ${new Date(data.dataAsOf).toLocaleString()}. Recommendations simulate managed weekly lineups, injury paths, four bench slots, opponent choices, and your next snake turn.`
+      ? `${data.scope}. Models refit through ${data.trainingThrough}; active rosters, starter depth, schedule, and game lines as of ${new Date(data.dataAsOf).toLocaleString()}. Player value comes from our forecasts; ESPN ADP is used only for opponent availability. Recommendations simulate managed weekly lineups, injury paths, eight bench slots, opponent choices, and your next snake turn.`
       : `${data.scope}. Recommendations combine game-level forecasts, format-derived replacement value, your roster, and the projected pool at your next snake turn; this remains a ${data.projectionSeason} out-of-sample validation board, not a live ${new Date().getFullYear()} preseason ranking.`;
     $("footerScope").textContent = `${data.projectionSeason} · ${scoringName()} · ${data.players.length} fantasy-relevant players`;
     $("injuryStatus").textContent = data.injuryReportsAvailable
@@ -849,7 +965,7 @@
     $("updatedLabel").textContent = `Generated ${generated.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
     if (!data.hasActuals) {
       document.body.classList.add("no-actuals");
-      $("draftRankSub").textContent = "Live recommendation";
+      $("draftRankSub").textContent = "Live · ESPN ADP";
       $("pointsRankSub").textContent = "Model";
       $("sortSelect").querySelectorAll('option[value="actual"], option[value="actual_draft"]').forEach((option) => { option.hidden = true; option.disabled = true; });
     }
