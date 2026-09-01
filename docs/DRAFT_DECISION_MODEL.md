@@ -55,6 +55,27 @@ the holdout, candidate minus ADP H2H win-rate deltas were `-0.0651`, `-0.1270`,
 `-48.02`, `-131.31`, `-188.81`, and `-213.19`. Therefore no candidate was
 promoted and the live board defaults to the legal market-order policy.
 
+A second experiment isolated draft theory from player forecasting. It gave the
+candidate market-implied player values, then limited each decision to players
+within 2, 4, or 8 ADP picks of the best legal player. The candidate could use
+roster utility and either greedy or next-turn lookahead only to choose inside
+that market guardrail. Development again covered 2019-2023 and selected the
+guardrail before the 2024 holdout was opened. In deterministic rooms, candidate
+minus ADP H2H deltas were `-0.0217`, `-0.0294`, `-0.0292`, and `-0.1064` for
+8, 10, 12, and 14 teams. No guarded policy passed.
+
+The same guardrail selection was repeated with noisy opponents. At each pick,
+an opponent's ADP preference received a reproducible normal shock with a
+standard deviation of roughly 3 picks early, 8 at pick 50, and 13 at pick 100,
+capped at 20. Baseline and candidate faced the same realized shocks. Lookahead
+used independent shocks, preventing future-information leakage. Eight holdout
+room realizations were run per draft slot. Candidate minus ADP H2H deltas were
+`-0.0093`, `-0.0094`, `-0.0351`, and `-0.0005`; slot-clustered approximate 95%
+intervals were `[-0.0444, 0.0257]`, `[-0.0309, 0.0121]`,
+`[-0.0665, -0.0037]`, and `[-0.0248, 0.0237]`. The 14-team candidate gained
+10.90 season points on average, but its interval `[-24.68, 46.48]` crossed zero
+and H2H did not improve. This is no evidence of a deployable edge.
+
 H2H win rate uses each managed lineup against every other roster in Weeks 1-14;
 season points use managed legal lineups in Weeks 1-17. Averaging all draft slots
 makes the all-ADP league baseline exactly `0.500` by construction. This is a

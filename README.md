@@ -162,10 +162,20 @@ Development chose zero model weight in 8-, 10-, 12-, and 14-team leagues. On the
 and `16.5` H2H win-rate percentage points, respectively. The failed candidates
 were not promoted; legal ADP is the deployed default.
 
+The follow-up draft-theory test removed our forecast from the candidate value,
+restricted choices to 2-, 4-, or 8-pick ADP neighborhoods, and tested greedy and
+next-turn policies. It was run against both deterministic ADP opponents and
+noisy opponents whose deviations widen by draft depth. Baseline and candidate
+shared each realized noisy room, while lookahead used independent future draws.
+The guarded candidate still failed to beat legal ADP on 2024 H2H outcomes at
+all four league sizes. Noisy-room deltas were `-0.9`, `-0.9`, `-3.5`, and
+`-0.1` percentage points for 8, 10, 12, and 14 teams.
+
 This result does not prove ADP is universally optimal. It establishes that the
 current forecast and heuristic draft layer have not beaten the much stronger
-market baseline under this simulation design. Raw manager-level draft sequences,
-auction values, trades, waivers, and playoff scheduling remain outside the test.
+market baseline under either tested room model. Raw manager-level draft
+sequences, auction values, trades, waivers, and playoff scheduling remain
+outside the test.
 
 The current board omits hindsight and actual columns until 2026 games are
 completed. Historical validation outputs remain in `results/`; no realized

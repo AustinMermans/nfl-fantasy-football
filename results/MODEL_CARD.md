@@ -191,6 +191,28 @@ ESPN/Sleeper consensus are available as live comparisons. Sleeper is not claimed
 as a historical baseline because its public interface does not expose the same
 complete league-size series.
 
+A follow-up tested whether draft theory could improve ADP without relying on the
+player forecast. Candidate choices used market-implied points, roster utility,
+and optional next-turn lookahead, but could reach only 2, 4, or 8 picks beyond
+the best legal ADP. Guardrails and lookahead were selected on 2019-2023.
+
+| Teams | Fixed-room H2H delta | Noisy-room H2H delta | Noisy point delta |
+|--:|--:|--:|--:|
+| 8 | -0.0217 | -0.0093 | -14.50 |
+| 10 | -0.0294 | -0.0094 | -8.52 |
+| 12 | -0.0292 | -0.0351 | -41.40 |
+| 14 | -0.1064 | -0.0005 | +10.90 |
+
+Noisy opponents received reproducible ADP shocks that grew from about 3 picks
+early to 13 picks around pick 100, capped at 20. The baseline and candidate saw
+identical realized rooms, while the candidate's lookahead used independent
+shocks. The 2024 noisy holdout used eight room repetitions per slot. None of the
+four H2H deltas was positive; only the 12-team loss excluded zero under a
+slot-clustered approximate 95% interval. The 14-team point gain was uncertain
+and did not improve H2H. This narrows the earlier failure to the decision layer:
+the tested roster and availability heuristics have not beaten legal ADP even
+when player values come directly from the market.
+
 The experimental live layer evaluates the available pool, inferred opponent
 rosters, the user's roster, snake slot, and picks until the next turn. ESPN ADP and the
 midpoint of ESPN Standard/PPR rank form a separate opponent-availability prior;

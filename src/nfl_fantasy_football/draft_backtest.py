@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -28,11 +29,13 @@ class PolicyConfig:
     model_weight: float
     bench_weight: float
     lookahead: bool = True
+    max_adp_reach: float | None = None
 
     @property
     def name(self) -> str:
+        reach = "" if self.max_adp_reach is None else f"_r{self.max_adp_reach:.1f}"
         return (
-            f"hybrid_w{self.model_weight:.2f}_b{self.bench_weight:.2f}_"
+            f"hybrid_w{self.model_weight:.2f}_b{self.bench_weight:.2f}{reach}_"
             f"{'lookahead' if self.lookahead else 'greedy'}"
         )
 
@@ -86,7 +89,9 @@ def fetch_mfl_adp_snapshot(
         raise ValueError("reception_points must be between standard and full PPR")
 
     root = cache_dir / str(season)
-    players_url = f"{MFL_BASE.format(season=season)}?{urlencode({'TYPE': 'players', 'JSON': 1})}"
+    players_url = (
+        f"{MFL_BASE.format(season=season)}?{urlencode({'TYPE': 'players', 'JSON': 1})}"
+    )
     players_payload = _read_json(players_url, root / "players.json", refresh=refresh)
     player_rows = players_payload.get("players", {}).get("player", [])  # type: ignore[union-attr]
     players = {
@@ -130,15 +135,18 @@ def fetch_mfl_adp_snapshot(
         combined = combined.merge(frame, on="mfl_id", how="outer")
     standard = combined.get("adp_standard", pd.Series(np.nan, index=combined.index))
     ppr = combined.get("adp_ppr", pd.Series(np.nan, index=combined.index))
-    combined["adp"] = (
-        (1.0 - reception_points) * standard.fillna(ppr)
-        + reception_points * ppr.fillna(standard)
+    combined["adp"] = (1.0 - reception_points) * standard.fillna(
+        ppr
+    ) + reception_points * ppr.fillna(standard)
+    combined["name"] = combined["mfl_id"].map(
+        lambda value: players.get(str(value), {}).get("name")
     )
-    combined["name"] = combined["mfl_id"].map(lambda value: players.get(str(value), {}).get("name"))
     combined["position"] = combined["mfl_id"].map(
         lambda value: players.get(str(value), {}).get("position")
     )
-    combined["team"] = combined["mfl_id"].map(lambda value: players.get(str(value), {}).get("team"))
+    combined["team"] = combined["mfl_id"].map(
+        lambda value: players.get(str(value), {}).get("team")
+    )
     combined["name_key"] = combined["name"].map(normalized_player_name)
     combined["season"] = int(season)
     combined["teams"] = int(teams)
@@ -170,7 +178,9 @@ def build_historical_player_pool(
         actual_points=("actual_points", "sum")
     )
     weekly_maps = weekly.groupby(["name_key", "position"]).apply(
-        lambda frame: {int(row.week): float(row.actual_points) for row in frame.itertuples()},
+        lambda frame: {
+            int(row.week): float(row.actual_points) for row in frame.itertuples()
+        },
         include_groups=False,
     )
     totals["actual_weekly"] = [
@@ -216,7 +226,9 @@ def add_market_implied_points(
             )
             continue
         model = IsotonicRegression(increasing=False, out_of_bounds="clip")
-        model.fit(np.log1p(train["adp"].astype(float)), train["actual_points"].astype(float))
+        model.fit(
+            np.log1p(train["adp"].astype(float)), train["actual_points"].astype(float)
+        )
         output.loc[test_mask, "market_points"] = model.predict(
             np.log1p(output.loc[test_mask, "adp"].astype(float))
         )
@@ -226,12 +238,20 @@ def add_market_implied_points(
 def _starter_deficit(
     roster: Sequence[Mapping[str, object]], roster_slots: Mapping[str, int]
 ) -> int:
-    counts = {position: sum(player["position"] == position for player in roster) for position in POSITIONS}
-    base_missing = sum(max(0, int(roster_slots[position]) - counts[position]) for position in POSITIONS)
+    counts = {
+        position: sum(player["position"] == position for player in roster)
+        for position in POSITIONS
+    }
+    base_missing = sum(
+        max(0, int(roster_slots[position]) - counts[position]) for position in POSITIONS
+    )
     flex_used = max(
         0,
         sum(counts[position] for position in FLEX_POSITIONS)
-        - sum(min(counts[position], int(roster_slots[position])) for position in FLEX_POSITIONS),
+        - sum(
+            min(counts[position], int(roster_slots[position]))
+            for position in FLEX_POSITIONS
+        ),
     )
     return base_missing + max(0, int(roster_slots["FLEX"]) - flex_used)
 
@@ -248,7 +268,9 @@ def _eligible_players(
     eligible = []
     for player in available:
         position = str(player["position"])
-        if sum(item["position"] == position for item in roster) >= int(roster_maximums[position]):
+        if sum(item["position"] == position for item in roster) >= int(
+            roster_maximums[position]
+        ):
             continue
         if _starter_deficit([*roster, player], roster_slots) <= remaining_after_pick:
             eligible.append(player)
@@ -262,10 +284,16 @@ def _replacement_points(
     replacements = {}
     for position in POSITIONS:
         values = sorted(
-            (float(player[points_key]) for player in players if player["position"] == position),
+            (
+                float(player[points_key])
+                for player in players
+                if player["position"] == position
+            ),
             reverse=True,
         )
-        replacements[position] = values[min(max(ranks[position], 1), len(values)) - 1] if values else 0.0
+        replacements[position] = (
+            values[min(max(ranks[position], 1), len(values)) - 1] if values else 0.0
+        )
     return replacements
 
 
@@ -279,7 +307,10 @@ def _roster_utility(
 ) -> float:
     starter_value = lineup_value(list(roster), points_key, roster_slots=roster_slots)
     bench_option = sum(
-        max(0.0, float(player[points_key]) - float(replacements[str(player["position"])]))
+        max(
+            0.0,
+            float(player[points_key]) - float(replacements[str(player["position"])]),
+        )
         for player in roster
     )
     return starter_value + bench_weight * bench_option
@@ -292,6 +323,9 @@ def _opponent_pick(
     rounds: int,
     roster_slots: Mapping[str, int],
     roster_maximums: Mapping[str, int],
+    room_noise: float = 0.0,
+    noise_seed: int = 0,
+    overall_pick: int = 1,
 ) -> dict[str, object]:
     eligible = _eligible_players(
         available,
@@ -300,7 +334,21 @@ def _opponent_pick(
         roster_slots=roster_slots,
         roster_maximums=roster_maximums,
     )
-    return min(eligible, key=lambda player: (float(player["adp"]), str(player["name"])))
+
+    def noisy_rank(player: Mapping[str, object]) -> tuple[float, str]:
+        if room_noise <= 0:
+            return float(player["adp"]), str(player["name"])
+        key = f"{noise_seed}|{overall_pick}|{player['mfl_id']}".encode()
+        digest = hashlib.blake2b(key, digest_size=16).digest()
+        first = max((int.from_bytes(digest[:8], "big") + 0.5) / 2**64, 1e-12)
+        second = (int.from_bytes(digest[8:], "big") + 0.5) / 2**64
+        shock = np.sqrt(-2.0 * np.log(first)) * np.cos(2.0 * np.pi * second)
+        deviation = min(20.0, 3.0 + 0.10 * overall_pick)
+        return float(player["adp"]) + room_noise * deviation * float(shock), str(
+            player["name"]
+        )
+
+    return min(eligible, key=noisy_rank)
 
 
 def simulate_historical_draft(
@@ -313,6 +361,9 @@ def simulate_historical_draft(
     policy: PolicyConfig | None = None,
     roster_slots: Mapping[str, int] | None = None,
     roster_maximums: Mapping[str, int] | None = None,
+    room_noise: float = 0.0,
+    noise_seed: int = 0,
+    lookahead_samples: int = 2,
 ) -> dict[str, object]:
     """Draft against fixed roster-aware ADP opponents and score realized lineups."""
     if strategy not in {"adp", "hybrid"}:
@@ -326,10 +377,15 @@ def simulate_historical_draft(
     players["hybrid_points"] = (
         players["market_points"]
         + config.model_weight
-        * (players["season_ensemble"].fillna(players["market_points"]) - players["market_points"])
+        * (
+            players["season_ensemble"].fillna(players["market_points"])
+            - players["market_points"]
+        )
     ).clip(lower=0.0)
     available = players.to_dict("records")
-    rosters: dict[int, list[dict[str, object]]] = {team: [] for team in range(1, teams + 1)}
+    rosters: dict[int, list[dict[str, object]]] = {
+        team: [] for team in range(1, teams + 1)
+    }
     replacements = _replacement_points(available, teams, "hybrid_points")
 
     def choose_hybrid(overall_pick: int) -> dict[str, object]:
@@ -341,15 +397,26 @@ def simulate_historical_draft(
             roster_slots=slots,
             roster_maximums=maximums,
         )
-        shortlist = sorted(eligible, key=lambda player: float(player["adp"]))[:12]
-        for position in POSITIONS:
-            leaders = sorted(
-                (player for player in eligible if player["position"] == position),
-                key=lambda player: float(player["hybrid_points"]),
-                reverse=True,
-            )[:2]
-            shortlist.extend(leaders)
-        shortlist = list({str(player["mfl_id"]): player for player in shortlist}.values())
+        ordered_by_adp = sorted(eligible, key=lambda player: float(player["adp"]))
+        if config.max_adp_reach is not None:
+            best_adp = float(ordered_by_adp[0]["adp"])
+            shortlist = [
+                player
+                for player in ordered_by_adp
+                if float(player["adp"]) <= best_adp + config.max_adp_reach
+            ]
+        else:
+            shortlist = ordered_by_adp[:12]
+            for position in POSITIONS:
+                leaders = sorted(
+                    (player for player in eligible if player["position"] == position),
+                    key=lambda player: float(player["hybrid_points"]),
+                    reverse=True,
+                )[:2]
+                shortlist.extend(leaders)
+        shortlist = list(
+            {str(player["mfl_id"]): player for player in shortlist}.values()
+        )
 
         def candidate_value(candidate: dict[str, object]) -> tuple[float, float, float]:
             immediate = _roster_utility(
@@ -361,43 +428,58 @@ def simulate_historical_draft(
             )
             if not config.lookahead or len(roster) + 4 >= rounds:
                 return immediate, immediate, -float(candidate["adp"])
-            future_available = [player for player in available if player["mfl_id"] != candidate["mfl_id"]]
-            future_rosters = {team: list(items) for team, items in rosters.items()}
-            future_rosters[draft_slot].append(candidate)
-            next_turn = next_pick_for_team(overall_pick, teams, draft_slot)
-            for future_pick in range(overall_pick + 1, next_turn):
-                manager = snake_team(future_pick, teams)
-                selected = _opponent_pick(
+            scenario_values = []
+            scenario_count = max(1, lookahead_samples if room_noise > 0 else 1)
+            for scenario in range(scenario_count):
+                future_available = [
+                    player
+                    for player in available
+                    if player["mfl_id"] != candidate["mfl_id"]
+                ]
+                future_rosters = {team: list(items) for team, items in rosters.items()}
+                future_rosters[draft_slot].append(candidate)
+                next_turn = next_pick_for_team(overall_pick, teams, draft_slot)
+                decision_seed = noise_seed + 1_000_003 + scenario * 104_729
+                for future_pick in range(overall_pick + 1, next_turn):
+                    manager = snake_team(future_pick, teams)
+                    selected = _opponent_pick(
+                        future_available,
+                        future_rosters[manager],
+                        rounds=rounds,
+                        roster_slots=slots,
+                        roster_maximums=maximums,
+                        room_noise=room_noise,
+                        noise_seed=decision_seed,
+                        overall_pick=future_pick,
+                    )
+                    future_rosters[manager].append(selected)
+                    future_available.remove(selected)
+                partners = _eligible_players(
                     future_available,
-                    future_rosters[manager],
+                    future_rosters[draft_slot],
                     rounds=rounds,
                     roster_slots=slots,
                     roster_maximums=maximums,
                 )
-                future_rosters[manager].append(selected)
-                future_available.remove(selected)
-            partners = _eligible_players(
-                future_available,
-                future_rosters[draft_slot],
-                rounds=rounds,
-                roster_slots=slots,
-                roster_maximums=maximums,
-            )
-            partner_shortlist = sorted(partners, key=lambda player: float(player["adp"]))[:8]
-            best_turn = max(
-                (
-                    _roster_utility(
-                        [*future_rosters[draft_slot], partner],
-                        points_key="hybrid_points",
-                        bench_weight=config.bench_weight,
-                        roster_slots=slots,
-                        replacements=replacements,
+                partner_shortlist = sorted(
+                    partners, key=lambda player: float(player["adp"])
+                )[:6]
+                scenario_values.append(
+                    max(
+                        (
+                            _roster_utility(
+                                [*future_rosters[draft_slot], partner],
+                                points_key="hybrid_points",
+                                bench_weight=config.bench_weight,
+                                roster_slots=slots,
+                                replacements=replacements,
+                            )
+                            for partner in partner_shortlist
+                        ),
+                        default=immediate,
                     )
-                    for partner in partner_shortlist
-                ),
-                default=immediate,
-            )
-            return best_turn, immediate, -float(candidate["adp"])
+                )
+            return float(np.mean(scenario_values)), immediate, -float(candidate["adp"])
 
         return max(shortlist, key=candidate_value)
 
@@ -405,8 +487,18 @@ def simulate_historical_draft(
         if not available:
             break
         manager = snake_team(overall_pick, teams)
-        if manager == draft_slot and strategy == "hybrid":
-            selected = choose_hybrid(overall_pick)
+        if manager == draft_slot:
+            selected = (
+                choose_hybrid(overall_pick)
+                if strategy == "hybrid"
+                else _opponent_pick(
+                    available,
+                    rosters[manager],
+                    rounds=rounds,
+                    roster_slots=slots,
+                    roster_maximums=maximums,
+                )
+            )
         else:
             selected = _opponent_pick(
                 available,
@@ -414,6 +506,9 @@ def simulate_historical_draft(
                 rounds=rounds,
                 roster_slots=slots,
                 roster_maximums=maximums,
+                room_noise=room_noise,
+                noise_seed=noise_seed,
+                overall_pick=overall_pick,
             )
         rosters[manager].append(selected)
         available.remove(selected)
@@ -432,7 +527,11 @@ def simulate_historical_draft(
     for week in range(1, 15):
         mine = weekly_scores[draft_slot][week]
         comparisons.extend(
-            1.0 if mine > weekly_scores[team][week] else 0.5 if mine == weekly_scores[team][week] else 0.0
+            1.0
+            if mine > weekly_scores[team][week]
+            else 0.5
+            if mine == weekly_scores[team][week]
+            else 0.0
             for team in rosters
             if team != draft_slot
         )
@@ -442,19 +541,25 @@ def simulate_historical_draft(
         "teams": teams,
         "draft_slot": draft_slot,
         "rounds": rounds,
+        "room_noise": room_noise,
+        "noise_seed": noise_seed,
         "policy": config.name if strategy == "hybrid" else "naive_adp",
         "h2h_win_rate": float(np.mean(comparisons)) if comparisons else float("nan"),
         "managed_points_week_1_17": float(sum(weekly_scores[draft_slot].values())),
         "roster": [str(player["name"]) for player in my_roster],
         **{
-            f"n_{position.lower()}": sum(player["position"] == position for player in my_roster)
+            f"n_{position.lower()}": sum(
+                player["position"] == position for player in my_roster
+            )
             for position in POSITIONS
         },
     }
 
 
 def summarize_policy_results(results: pd.DataFrame) -> pd.DataFrame:
-    return results.groupby(["split", "teams", "strategy", "policy"], as_index=False).agg(
+    return results.groupby(
+        ["split", "teams", "strategy", "policy"], as_index=False
+    ).agg(
         drafts=("draft_slot", "count"),
         mean_h2h_win_rate=("h2h_win_rate", "mean"),
         mean_managed_points=("managed_points_week_1_17", "mean"),
@@ -464,10 +569,17 @@ def summarize_policy_results(results: pd.DataFrame) -> pd.DataFrame:
 def policy_grid(
     model_weights: Iterable[float] = (0.0, 0.25, 0.5, 0.75),
     bench_weights: Iterable[float] = (0.15,),
+    adp_reaches: Iterable[float | None] = (None,),
 ) -> tuple[PolicyConfig, ...]:
     return tuple(
-        PolicyConfig(model_weight=float(model), bench_weight=float(bench), lookahead=lookahead)
+        PolicyConfig(
+            model_weight=float(model),
+            bench_weight=float(bench),
+            lookahead=lookahead,
+            max_adp_reach=None if reach is None else float(reach),
+        )
         for model in model_weights
         for bench in bench_weights
+        for reach in adp_reaches
         for lookahead in (False, True)
     )

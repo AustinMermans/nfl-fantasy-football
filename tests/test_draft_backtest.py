@@ -2,9 +2,11 @@ import pandas as pd
 
 from nfl_fantasy_football.draft_backtest import (
     PolicyConfig,
+    _opponent_pick,
     add_market_implied_points,
     display_name_from_mfl,
     normalized_player_name,
+    policy_grid,
     simulate_historical_draft,
 )
 
@@ -50,7 +52,9 @@ def test_historical_draft_completes_legal_roster_and_scores_h2h() -> None:
                     "adp": float(adp),
                     "market_points": points - index * 0.1,
                     "season_ensemble": points - index * 0.08,
-                    "actual_weekly": {week: points - index * 0.1 for week in range(1, 18)},
+                    "actual_weekly": {
+                        week: points - index * 0.1 for week in range(1, 18)
+                    },
                 }
             )
             adp += 1
@@ -72,3 +76,42 @@ def test_historical_draft_completes_legal_roster_and_scores_h2h() -> None:
     assert result["n_wr"] >= 2
     assert result["n_te"] >= 1
     assert result["n_k"] >= 1
+
+
+def test_noisy_opponent_choice_is_reproducible_and_does_not_change_fixed_adp() -> None:
+    available = [
+        {
+            "mfl_id": str(index),
+            "name": f"RB {index}",
+            "position": "RB",
+            "adp": 10.0 + index,
+        }
+        for index in range(8)
+    ]
+    kwargs = {
+        "rounds": 17,
+        "roster_slots": {"QB": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 2, "K": 1},
+        "roster_maximums": {"QB": 4, "RB": 8, "WR": 8, "TE": 3, "K": 3},
+        "overall_pick": 20,
+    }
+
+    fixed = _opponent_pick(available, [], room_noise=0.0, noise_seed=11, **kwargs)
+    noisy_first = _opponent_pick(available, [], room_noise=1.0, noise_seed=11, **kwargs)
+    noisy_second = _opponent_pick(
+        available, [], room_noise=1.0, noise_seed=11, **kwargs
+    )
+
+    assert fixed["mfl_id"] == "0"
+    assert noisy_first == noisy_second
+
+
+def test_policy_grid_builds_distinct_market_guardrails() -> None:
+    policies = policy_grid(
+        model_weights=[0.0],
+        bench_weights=[0.15],
+        adp_reaches=[2.0, 8.0],
+    )
+
+    assert len(policies) == 4
+    assert {policy.max_adp_reach for policy in policies} == {2.0, 8.0}
+    assert len({policy.name for policy in policies}) == 4
