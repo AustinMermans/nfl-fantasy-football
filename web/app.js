@@ -57,9 +57,13 @@
     try {
       const saved = JSON.parse(localStorage.getItem(storageKey) || localStorage.getItem(previousStorageKey));
       if (saved && Array.isArray(saved.picks)) {
-        state.picks = saved.picks.filter((pick) => pick.id && pick.owner);
-        state.teams = Number(saved.teams || state.teams);
-        state.draftSlot = Math.min(state.teams, Number(saved.draftSlot || state.draftSlot));
+        const validIds = new Set(data.players.map((player) => player.id));
+        state.teams = [8, 10, 12, 14, 16].includes(Number(saved.teams)) ? Number(saved.teams) : state.teams;
+        state.draftSlot = Math.max(1, Math.min(state.teams, Number(saved.draftSlot) || state.draftSlot));
+        const seen = new Set();
+        state.picks = saved.picks.filter((pick) => validIds.has(pick.id) && ["mine", "other"].includes(pick.owner) && !seen.has(pick.id) && seen.add(pick.id))
+          .slice(0, state.teams * Number(defaultConfig.rounds || 12))
+          .map((pick, index) => ({ ...pick, overallPick: index + 1, drafterTeam: pick.owner === "mine" ? state.draftSlot : snakeTeam(index + 1) }));
         state.scenario = saved.scenario || state.scenario;
         state.policy = saved.policy || state.policy;
         state.scoring = { ...state.scoring, ...(saved.scoring || {}) };
@@ -83,13 +87,15 @@
   }
 
   function setPlayerStatus(id, owner) {
-    state.picks = state.picks.filter((pick) => pick.id !== id);
-    if (owner !== "available") {
-      const overallPick = state.picks.length + 1;
-      state.picks.push({ id, owner, overallPick, drafterTeam: owner === "mine" ? state.draftSlot : snakeTeam(overallPick), changedAt: Date.now() });
-    }
+    if (owner === "available" || statusFor(id) !== "available") return;
+    const maxPicks = state.teams * Number(defaultConfig.rounds || 12);
+    if (state.picks.length >= maxPicks) return;
+    const overallPick = state.picks.length + 1;
+    state.picks.push({ id, owner, overallPick, drafterTeam: owner === "mine" ? state.draftSlot : snakeTeam(overallPick), changedAt: Date.now() });
     savePicks();
     render();
+    const player = data.players.find((item) => item.id === id);
+    $("announcement").textContent = `${player?.name || "Player"} marked ${owner === "mine" ? "on your roster" : "taken"}. Undo is available.`;
   }
 
   function snakeTeam(overallPick) {
@@ -422,6 +428,7 @@
     const rosterCache = new Map();
     const posterior = roomPosterior(metrics);
     const currentPick = state.picks.length + 1;
+    const draftComplete = currentPick > state.teams * Number(defaultConfig.rounds || 12);
     const onClock = snakeTeam(currentPick) === state.draftSlot;
     const decisionPick = onClock ? currentPick : nextPickForTeam(currentPick - 1);
     const nextTurn = nextPickForTeam(decisionPick);
@@ -489,7 +496,7 @@
     const pointRanks = new Map([...data.players]
       .sort((a, b) => pointsFor(b) - pointsFor(a) || a.name.localeCompare(b.name))
       .map((player, index) => [player.id, index + 1]));
-    const result = { candidates, byId: new Map(candidates.map((candidate) => [candidate.player.id, candidate])), currentPick, decisionPick, nextTurn, opponentPicks, onClock, metrics, pointRanks, posterior };
+    const result = { candidates, byId: new Map(candidates.map((candidate) => [candidate.player.id, candidate])), currentPick, decisionPick, nextTurn, opponentPicks, onClock, draftComplete, metrics, pointRanks, posterior };
     recommendationCache = { key: cacheKey, value: result };
     return result;
   }
@@ -625,6 +632,7 @@
     const range = scaledRange(player);
     const rookieMeta = range.source === "historical rookie analogs" ? ` · rookie P10–P90 ${range.p10.toFixed(0)}–${range.p90.toFixed(0)}` : "";
     const injuryMeta = player.injury?.gameStatus ? ` · ${escapeHtml(player.injury.gameStatus)}` : "";
+    const actionsDisabled = status !== "available" || recommendations.draftComplete;
     return `
       <tr class="player-row${rowClass}" data-id="${escapeHtml(player.id)}">
         <td class="rank-cell">
@@ -655,8 +663,8 @@
         <td>${statusMarkup(player, status)}</td>
         <td class="actions-cell">
           <div class="row-actions">
-            <button type="button" data-action="mine" data-id="${escapeHtml(player.id)}" title="Add to my roster" aria-label="Add ${escapeHtml(player.name)} to my roster"><i data-lucide="user-plus"></i></button>
-            <button type="button" data-action="other" data-id="${escapeHtml(player.id)}" title="Mark drafted by someone else" aria-label="Mark ${escapeHtml(player.name)} drafted by someone else"><i data-lucide="user-x"></i></button>
+            <button type="button" data-action="mine" data-id="${escapeHtml(player.id)}" ${actionsDisabled ? "disabled" : ""} title="Add to my roster" aria-label="Add ${escapeHtml(player.name)} to my roster"><i data-lucide="user-plus"></i><span>Mine</span></button>
+            <button type="button" data-action="other" data-id="${escapeHtml(player.id)}" ${actionsDisabled ? "disabled" : ""} title="Mark drafted by someone else" aria-label="Mark ${escapeHtml(player.name)} drafted by someone else"><i data-lucide="user-x"></i><span>Taken</span></button>
             <button type="button" data-action="expand" data-id="${escapeHtml(player.id)}" title="View game-by-game projections" aria-label="View ${escapeHtml(player.name)} game-by-game projections" aria-expanded="${expanded}"><i data-lucide="${expanded ? "chevron-up" : "chevron-down"}"></i></button>
           </div>
         </td>
@@ -693,19 +701,20 @@
   function renderSummary(recommendations) {
     const best = recommendations.candidates[0]?.player;
     const bestRecommendation = best ? recommendations.byId.get(best.id) : null;
-    $("bestName").textContent = best?.name || "No player available";
+    $("bestHeading").textContent = recommendations.draftComplete ? "Draft complete" : recommendations.onClock ? "Pick now" : `Target for pick #${recommendations.decisionPick}`;
+    $("bestName").textContent = recommendations.draftComplete ? "Roster locked" : best?.name || "No player available";
     $("bestMeta").textContent = best ? `${best.position} · ${best.team} · ${scoringName()}` : "-";
-    $("bestPoints").textContent = bestRecommendation ? `${Math.round(bestRecommendation.survivalProbability * 100)}%` : "-";
+    $("bestPoints").textContent = recommendations.draftComplete ? "-" : bestRecommendation ? `${Math.round(bestRecommendation.survivalProbability * 100)}%` : "-";
     $("bestMetricLabel").textContent = "Next-turn survival";
     $("bestMetricUnit").textContent = `16 opponent-pick simulations to #${recommendations.nextTurn}`;
     $("availableCount").textContent = data.players.filter((player) => statusFor(player.id) === "available").length;
     $("mineCount").textContent = data.players.filter((player) => statusFor(player.id) === "mine").length;
     $("takenCount").textContent = data.players.filter((player) => statusFor(player.id) === "other").length;
     const round = Math.floor((recommendations.currentPick - 1) / state.teams) + 1;
-    $("clockPick").textContent = `${round}.${String(((recommendations.currentPick - 1) % state.teams) + 1).padStart(2, "0")}`;
-    $("clockMeta").textContent = recommendations.onClock ? "You are on the clock" : `Team ${snakeTeam(recommendations.currentPick)} selecting`;
-    $("nextTurn").textContent = `#${recommendations.nextTurn}`;
-    $("nextTurnMeta").textContent = `${recommendations.opponentPicks} opponent picks away`;
+    $("clockPick").textContent = recommendations.draftComplete ? "Final" : `${round}.${String(((recommendations.currentPick - 1) % state.teams) + 1).padStart(2, "0")}`;
+    $("clockMeta").textContent = recommendations.draftComplete ? `${state.picks.length} picks recorded` : recommendations.onClock ? "You are on the clock" : `Team ${snakeTeam(recommendations.currentPick)} selecting`;
+    $("nextTurn").textContent = recommendations.draftComplete ? "-" : `#${recommendations.onClock ? recommendations.nextTurn : recommendations.decisionPick}`;
+    $("nextTurnMeta").textContent = recommendations.draftComplete ? "Draft finished" : recommendations.onClock ? `${recommendations.opponentPicks} opponent picks away` : `${recommendations.decisionPick - recommendations.currentPick} picks until your turn`;
     $("rosterNeeds").innerHTML = rosterNeeds();
     $("undoButton").disabled = state.picks.length === 0;
     const orderedPosterior = Object.entries(recommendations.posterior).sort((a, b) => b[1] - a[1]);
@@ -791,12 +800,14 @@
         render();
         return;
       }
-      setPlayerStatus(id, statusFor(id) === action ? "available" : action);
+      setPlayerStatus(id, action);
     });
     $("undoButton").addEventListener("click", () => {
-      state.picks.pop();
+      const undone = state.picks.pop();
       savePicks();
       render();
+      const player = data.players.find((item) => item.id === undone?.id);
+      $("announcement").textContent = `${player?.name || "Last pick"} restored to available.`;
     });
     $("resetButton").addEventListener("click", () => {
       if (!state.picks.length || window.confirm("Reset every draft-board selection?")) {

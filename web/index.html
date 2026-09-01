@@ -6,10 +6,10 @@
   <meta name="color-scheme" content="light">
   <title>NFL Fantasy Draft Board</title>
   <link rel="preconnect" href="https://a.espncdn.com">
-  <link rel="stylesheet" href="styles.css?v=20260831-bayesian-room">
+  <link rel="stylesheet" href="styles.css?v=20260831-mobile-final">
   <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
   <script src="projections.js?v=20260831-bayesian-room"></script>
-  <script src="app.js?v=20260831-bayesian-room" defer></script>
+  <script src="app.js?v=20260831-mobile-final" defer></script>
 </head>
 <body>
   <div id="error" class="fatal" hidden></div>
@@ -28,7 +28,7 @@
       </div>
     </header>
 
-    <main>
+    <main id="board">
       <section class="board-heading">
         <div>
           <p class="eyebrow">Live decision board</p>
@@ -115,7 +115,7 @@
 
       <section class="summary-strip" aria-label="Draft summary">
         <div class="best-available">
-          <span>Recommended now</span>
+          <span id="bestHeading">Recommended now</span>
           <strong id="bestName">-</strong>
           <small id="bestMeta">-</small>
         </div>
@@ -181,6 +181,7 @@
         </table>
         <div id="emptyState" class="empty-state" hidden>No players match this view.</div>
       </section>
+      <div id="announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
     </main>
 
     <footer>
