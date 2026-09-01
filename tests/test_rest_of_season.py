@@ -10,7 +10,7 @@ from nfl_fantasy_football.rest_of_season import (
 )
 
 
-def test_preseason_blend_preserves_existing_position_weights() -> None:
+def test_preseason_blend_uses_only_frozen_season_model_at_week_zero() -> None:
     points, weight = blend_remaining_projection(
         200.0,
         240.0,
@@ -18,14 +18,14 @@ def test_preseason_blend_preserves_existing_position_weights() -> None:
         games_played=0,
         position="RB",
     )
-    assert weight == pytest.approx(0.25)
-    assert points == pytest.approx(210.0)
+    assert weight == pytest.approx(0.0)
+    assert points == pytest.approx(200.0)
 
 
 def test_current_evidence_gains_weight_without_replacing_prior_immediately() -> None:
     early = inseason_component_weight("WR", 1)
     late = inseason_component_weight("WR", 12)
-    assert 0.25 < early < late < 1.0
+    assert 0.0 < early < late < 1.0
 
 
 def test_remaining_prior_is_scaled_to_games_left() -> None:

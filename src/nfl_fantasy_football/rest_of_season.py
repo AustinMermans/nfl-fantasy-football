@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import numpy as np
 
-from .preseason import COMPONENT_WEIGHT_BY_POSITION
-
 
 REGULAR_SEASON_GAMES = 17
 POSITION_UPDATE_PRIOR_GAMES = {
@@ -30,8 +28,7 @@ def inseason_component_weight(
     prior_games = POSITION_UPDATE_PRIOR_GAMES.get(position, 8.0)
     evidence = max(float(games_played), 0.0)
     reliability = evidence / (evidence + prior_games)
-    preseason_weight = 0.0 if rookie else COMPONENT_WEIGHT_BY_POSITION.get(position, 0.25)
-    return float(preseason_weight + (1.0 - preseason_weight) * reliability)
+    return float(reliability)
 
 
 def blend_remaining_projection(

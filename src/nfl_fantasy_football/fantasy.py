@@ -14,7 +14,7 @@ DEPLOYMENT_SELECTION: dict[str, tuple[str, str]] = {
     "rushing_yards": ("context", "hist"),
     "rushing_tds": ("market_context", "hist"),
     "rushing_2pt_conversions": ("workload", "hist"),
-    "receptions": ("market_context", "hist"),
+    "receptions": ("context", "hist"),
     "receiving_yards": ("market_context", "hist"),
     "receiving_tds": ("market_context", "hist"),
     "receiving_2pt_conversions": ("workload", "hist"),
