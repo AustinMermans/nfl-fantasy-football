@@ -55,6 +55,7 @@ h1 { margin: 0; font-size: 38px; line-height: 1.05; letter-spacing: 0; }
 .ros-view .draft-setup .draft-only { display: none; }
 .ros-view .draft-setup { grid-template-columns: 130px 1fr; }
 .ros-view .draft-record { display: none; }
+.ros-view .draft-history { display: none; }
 .button, .icon-button { height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; color: var(--ink); background: #fff; border: 1px solid #cfd6d1; border-radius: 5px; font-weight: 750; }
 .button { padding: 0 14px; }
 .icon-button { width: 40px; padding: 0; }
@@ -93,6 +94,22 @@ h1 { margin: 0; font-size: 38px; line-height: 1.05; letter-spacing: 0; }
 .summary-strip strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 24px; line-height: 1.1; }
 .summary-strip small { margin-top: 5px; color: var(--muted); font-size: 11px; }
 .best-available strong { color: var(--green); font-size: 22px; }
+
+.draft-history { margin-top: 12px; background: #fff; border: 1px solid var(--line); }
+.draft-history summary { min-height: 46px; padding: 0 14px; display: flex; align-items: center; gap: 10px; cursor: pointer; list-style: none; }
+.draft-history summary::-webkit-details-marker { display: none; }
+.draft-history summary > span { color: var(--green); font-size: 10px; font-weight: 900; text-transform: uppercase; }
+.draft-history summary > strong { color: var(--muted); font-size: 11px; }
+.draft-history summary > svg { width: 16px; margin-left: auto; transition: transform .15s ease; }
+.draft-history[open] summary > svg { transform: rotate(180deg); }
+.history-editor { padding: 0 14px 14px; border-top: 1px solid var(--line); }
+.history-list { max-height: 420px; overflow-y: auto; }
+.history-row { min-height: 48px; display: grid; grid-template-columns: 52px minmax(180px, 1fr) 96px repeat(3, 36px); align-items: center; gap: 6px; border-bottom: 1px solid #e8ebe9; }
+.history-pick { color: var(--muted); font-size: 10px; font-weight: 850; font-variant-numeric: tabular-nums; }
+.history-row input, .history-row select, .history-add input, .history-add select { width: 100%; height: 36px; padding: 0 9px; color: var(--ink); background: #fff; border: 1px solid #cfd6d1; border-radius: 4px; outline: none; }
+.history-row input:focus, .history-row select:focus, .history-add input:focus, .history-add select:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(23,99,63,.12); }
+.history-row button { width: 36px; height: 36px; }
+.history-add { padding-top: 12px; display: grid; grid-template-columns: minmax(180px, 1fr) 96px 40px; gap: 8px; }
 
 .toolbar { margin-top: 22px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .segmented-control { display: inline-flex; align-items: center; padding: 3px; background: #e5e9e6; border-radius: 6px; }
@@ -223,10 +240,11 @@ footer { max-width: 1420px; margin: 0 auto; padding: 18px 24px 26px; display: fl
   .board-heading { order: 0; margin-bottom: 12px; }
   .method-label { display: none; }
   .summary-strip { order: 1; position: sticky; top: 0; z-index: 8; }
-  .toolbar { order: 2; margin-top: 12px; }
-  .table-shell { order: 3; }
-  .draft-setup { order: 4; margin-top: 18px; }
-  .scoring-setup { order: 5; }
+  .draft-history { order: 2; }
+  .toolbar { order: 3; margin-top: 12px; }
+  .table-shell { order: 4; }
+  .draft-setup { order: 5; margin-top: 18px; }
+  .scoring-setup { order: 6; }
   .draft-record { order: 0; grid-template-columns: minmax(0, 1fr) 44px 44px; padding: 12px; }
   .draft-record .draft-name-field, .draft-record .saved-draft-field { grid-column: 1 / 3; }
   .draft-record .saved-draft-field { grid-row: 2; }
@@ -256,7 +274,7 @@ footer { max-width: 1420px; margin: 0 auto; padding: 18px 24px 26px; display: fl
   .segmented-control button { min-width: 0; padding-inline: 7px; }
   .toolbar-fields { align-items: stretch; flex-direction: column; }
   .sort-field select { width: 100%; }
-  .search-field input, .sort-field select, .draft-setup select, .draft-setup input, .draft-record input, .draft-record select, .scoring-setup select { min-height: 44px; font-size: 16px; }
+  .search-field input, .sort-field select, .draft-setup select, .draft-setup input, .draft-record input, .draft-record select, .history-row input, .history-row select, .history-add input, .history-add select, .scoring-setup select { min-height: 44px; font-size: 16px; }
   .segmented-control button { min-height: 44px; }
   .table-shell { overflow: visible; border: 0; background: transparent; box-shadow: none; }
   .rankings-table, .rankings-table tbody { display: block; width: 100%; min-width: 0; }
@@ -282,6 +300,10 @@ footer { max-width: 1420px; margin: 0 auto; padding: 18px 24px 26px; display: fl
   .row-actions button:last-child { flex: 0 0 48px; }
   .detail-row { display: block; width: 100%; margin: -8px 0 8px; }
   .detail-row td { display: block; width: 100%; padding: 0 !important; }
+  .history-row { padding-block: 8px; grid-template-columns: 42px minmax(0, 1fr) repeat(3, 44px); }
+  .history-row .history-owner { grid-column: 2 / -1; grid-row: 2; }
+  .history-row button { width: 44px; height: 44px; }
+  .history-add { grid-template-columns: minmax(0, 1fr) 104px 44px; }
   .player-detail { width: 100%; padding: 14px 12px 18px; }
   .detail-heading { align-items: flex-start; flex-direction: column; gap: 4px; }
   .weekly-scroll { width: 100%; max-width: calc(100vw - 24px); }

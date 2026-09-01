@@ -3,9 +3,11 @@
 
   const data = window.NFL_DRAFT_DATA;
   const marketData = window.NFL_MARKET_DATA || { players: [] };
-  const storageKey = "nfl-fantasy-draft-board-v6";
+  const sleeperData = window.NFL_SLEEPER_MARKET || { players: [] };
+  const policyAudit = window.NFL_DRAFT_POLICY_AUDIT || { defaultPolicy: "adp", holdoutSeason: null };
+  const storageKey = "nfl-fantasy-draft-board-v7";
   const draftLibraryKey = "nfl-fantasy-draft-library-v1";
-  const previousStorageKey = "nfl-fantasy-draft-board-v5";
+  const previousStorageKey = "nfl-fantasy-draft-board-v6";
   const legacyStorageKey = "nfl-fantasy-draft-board-v1";
   const defaultConfig = data?.draftConfig || {
     teams: 10, draftSlot: 10, rosterSlots: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 2, K: 1 },
@@ -18,7 +20,7 @@
   };
   const state = {
     position: "ALL", query: "", sort: "draft", view: "draft", picks: [], expanded: null,
-    teams: Number(defaultConfig.teams || 12), draftSlot: Number(defaultConfig.draftSlot || 1), scenario: "adaptive", policy: "lookahead",
+    teams: Number(defaultConfig.teams || 12), draftSlot: Number(defaultConfig.draftSlot || 1), scenario: "adaptive", policy: policyAudit.defaultPolicy || "adp", marketSource: "espn",
     scoring: { ...baseScoring }, activeDraftKey: null, draftName: "",
   };
   let draftLibrary = {};
@@ -39,8 +41,14 @@
   const marketByPlayer = new Map((marketData.players || []).map((player) => [
     `${normalizedName(player.name)}|${player.position}`, player,
   ]));
+  const sleeperByPlayer = new Map((sleeperData.players || []).map((player) => [
+    `${normalizedName(player.name)}|${player.position}`, player,
+  ]));
   const marketFor = (player) => marketByPlayer.get(`${normalizedName(player.name)}|${player.position}`);
-  const marketRankFor = (player, metrics) => {
+  const sleeperFor = (player) => sleeperByPlayer.get(`${normalizedName(player.name)}|${player.position}`);
+  const playerLabel = (player) => `${player.name} · ${player.position} · ${player.team}`;
+  const playerByLabel = new Map(data.players.map((player) => [playerLabel(player).toLowerCase(), player]));
+  const espnRankFor = (player, metrics) => {
     const market = marketFor(player);
     return Number(
       market?.marketCenter
@@ -48,6 +56,20 @@
       || market?.halfPprRank
       || Math.max(220, metrics.get(player.id).rank),
     );
+  };
+  const sleeperRankFor = (player, metrics) => Number(
+    sleeperFor(player)?.adp || Math.max(220, metrics.get(player.id).rank),
+  );
+  const consensusRankFor = (player, metrics) => {
+    const espn = marketFor(player)?.adp;
+    const sleeper = sleeperFor(player)?.adp;
+    if (espn && sleeper) return (Number(espn) + Number(sleeper)) / 2;
+    return Number(espn || sleeper || Math.max(220, metrics.get(player.id).rank));
+  };
+  const marketRankFor = (player, metrics) => {
+    if (state.marketSource === "sleeper") return sleeperRankFor(player, metrics);
+    if (state.marketSource === "consensus") return consensusRankFor(player, metrics);
+    return espnRankFor(player, metrics);
   };
 
   const positionClass = (position) => `position position-${position.toLowerCase()}`;
@@ -87,7 +109,7 @@
   function draftSnapshot() {
     return {
       picks: state.picks, teams: state.teams, draftSlot: state.draftSlot, scenario: state.scenario,
-      policy: state.policy, scoring: state.scoring, activeDraftKey: state.activeDraftKey,
+      policy: state.policy, marketSource: state.marketSource, scoring: state.scoring, activeDraftKey: state.activeDraftKey,
     };
   }
 
@@ -99,6 +121,7 @@
       state.draftSlot = Math.max(1, Math.min(state.teams, Number(saved.draftSlot) || state.draftSlot));
       state.scenario = saved.scenario || state.scenario;
       state.policy = saved.policy || state.policy;
+      state.marketSource = ["espn", "sleeper", "consensus"].includes(saved.marketSource) ? saved.marketSource : state.marketSource;
       state.scoring = { ...state.scoring, ...(saved.scoring || {}) };
       if (saved.activeDraftKey && draftLibrary[saved.activeDraftKey]) {
         state.activeDraftKey = saved.activeDraftKey;
@@ -150,6 +173,7 @@
     $("slotInput").value = state.draftSlot;
     $("scenarioSelect").value = state.scenario;
     $("policySelect").value = state.policy;
+    $("marketSourceSelect").value = state.marketSource;
     $("receptionSelect").value = String(state.scoring.receptions);
     $("passingTdSelect").value = String(state.scoring.passing_tds);
     $("interceptionSelect").value = String(state.scoring.passing_interceptions);
@@ -178,6 +202,32 @@
       };
       persistDraftLibrary();
     }
+  }
+
+  function reindexPicks() {
+    state.picks = state.picks.map((pick, index) => ({
+      ...pick,
+      overallPick: index + 1,
+      drafterTeam: pick.owner === "mine" ? state.draftSlot : snakeTeam(index + 1),
+    }));
+  }
+
+  function resolvePlayerInput(value) {
+    const cleaned = String(value || "").trim();
+    const labelMatch = playerByLabel.get(cleaned.toLowerCase());
+    if (labelMatch) return labelMatch;
+    const exact = data.players.filter((player) => player.name.toLowerCase() === cleaned.toLowerCase());
+    if (exact.length === 1) return exact[0];
+    const key = normalizedName(cleaned.split("·")[0]);
+    const normalized = data.players.filter((player) => normalizedName(player.name) === key);
+    return normalized.length === 1 ? normalized[0] : null;
+  }
+
+  function commitDraftHistory(message) {
+    reindexPicks();
+    savePicks();
+    render();
+    $("announcement").textContent = message;
   }
 
   function statusFor(id) {
@@ -511,15 +561,27 @@
     return { survivors: [...marketPool, ...deepPool], removed };
   }
 
+  function starterDeficit(players) {
+    const slots = defaultConfig.rosterSlots;
+    const counts = Object.fromEntries(["QB", "RB", "WR", "TE", "K"].map((position) => [
+      position, players.filter((player) => player.position === position).length,
+    ]));
+    const baseMissing = ["QB", "RB", "WR", "TE", "K"]
+      .reduce((total, position) => total + Math.max(0, Number(slots[position] || 0) - counts[position]), 0);
+    const flexUsed = Math.max(
+      0,
+      ["RB", "WR", "TE"].reduce((total, position) => total + counts[position], 0)
+        - ["RB", "WR", "TE"].reduce((total, position) => total + Math.min(counts[position], Number(slots[position] || 0)), 0),
+    );
+    return baseMissing + Math.max(0, Number(slots.FLEX || 0) - flexUsed);
+  }
+
   function recommendationState() {
-    const cacheKey = JSON.stringify({ picks: state.picks, teams: state.teams, draftSlot: state.draftSlot, scenario: state.scenario, policy: state.policy, scoring: state.scoring, view: state.view });
+    const cacheKey = JSON.stringify({ picks: state.picks, teams: state.teams, draftSlot: state.draftSlot, scenario: state.scenario, policy: state.policy, marketSource: state.marketSource, scoring: state.scoring, view: state.view });
     if (recommendationCache.key === cacheKey) return recommendationCache.value;
     const available = data.players.filter((player) => statusFor(player.id) === "available");
     const myRoster = data.players.filter((player) => statusFor(player.id) === "mine");
     const metrics = formatMetrics();
-    const weekly = buildWeeklyOutcomes(metrics);
-    const rosterCache = new Map();
-    const posterior = roomPosterior(metrics);
     const currentPick = state.picks.length + 1;
     const draftComplete = currentPick > state.teams * Number(defaultConfig.rounds || 12);
     const onClock = snakeTeam(currentPick) === state.draftSlot;
@@ -527,6 +589,62 @@
     const nextTurn = nextPickForTeam(decisionPick);
     const prefixPicks = onClock ? 0 : decisionPick - currentPick;
     const opponentPicks = nextTurn - decisionPick - 1;
+    const pointRanks = new Map([...data.players]
+      .sort((a, b) => pointsFor(b) - pointsFor(a) || a.name.localeCompare(b.name))
+      .map((player, index) => [player.id, index + 1]));
+    if (state.policy === "adp") {
+      const rosterCapacity = Object.values(defaultConfig.rosterSlots).reduce((sum, value) => sum + Number(value), 0)
+        + Number(defaultConfig.benchSlots || 4);
+      const rosterCounts = myRoster.reduce((counts, player) => ({
+        ...counts, [player.position]: (counts[player.position] || 0) + 1,
+      }), {});
+      const currentRound = Math.floor((decisionPick - 1) / state.teams) + 1;
+      const candidates = available.map((player) => {
+        const underPositionMaximum = (rosterCounts[player.position] || 0)
+          < Number(defaultConfig.rosterMaximums?.[player.position] || rosterCapacity);
+        const remainingAfterPick = Number(defaultConfig.rounds || 12) - myRoster.length - 1;
+        const timingEligible = underPositionMaximum
+          && starterDeficit([...myRoster, player]) <= remainingAfterPick
+          && (player.position !== "K" || currentRound >= Number(defaultConfig.rounds || 12));
+        return {
+          player,
+          decisionValue: metrics.get(player.id).value,
+          immediateValue: metrics.get(player.id).value,
+          immediateGain: metrics.get(player.id).value,
+          protectedGain: metrics.get(player.id).value,
+          survivalProbability: 0,
+          pairSelectionProbability: 0,
+          baseValue: metrics.get(player.id).value,
+          timingEligible,
+        };
+      }).sort((a, b) => (
+        Number(b.timingEligible) - Number(a.timingEligible)
+          || marketRankFor(a.player, metrics) - marketRankFor(b.player, metrics)
+          || b.baseValue - a.baseValue
+      ));
+      candidates.forEach((candidate, index) => { candidate.rank = index + 1; });
+      const posterior = Object.fromEntries(Object.entries(roomModels).map(([name, model]) => [name, model.prior]));
+      const result = {
+        candidates,
+        byId: new Map(candidates.map((candidate) => [candidate.player.id, candidate])),
+        currentPick,
+        decisionPick,
+        nextTurn,
+        prefixPicks,
+        opponentPicks,
+        onClock,
+        draftComplete,
+        metrics,
+        pointRanks,
+        posterior,
+        recommendedPair: [],
+      };
+      recommendationCache = { key: cacheKey, value: result };
+      return result;
+    }
+    const weekly = buildWeeklyOutcomes(metrics);
+    const rosterCache = new Map();
+    const posterior = roomPosterior(metrics);
     const marketSimulationCount = 256;
     const lookaheadSimulationCount = 32;
     const seeds = Array.from({ length: marketSimulationCount }, (_, index) => 104729 + index * 1543 + state.picks.length * 37);
@@ -598,7 +716,10 @@
       const immediateValue = managedRosterValue([...myRoster, candidate], weekly, rosterCache);
       const underPositionMaximum = (rosterCounts[candidate.position] || 0)
         < Number(defaultConfig.rosterMaximums?.[candidate.position] || rosterCapacity);
+      const remainingAfterPick = Number(defaultConfig.rounds || 12) - myRoster.length - 1;
+      const preservesLegalFinish = starterDeficit([...myRoster, candidate]) <= remainingAfterPick;
       const timingEligible = underPositionMaximum
+        && preservesLegalFinish
         && (candidate.position !== "K" || currentRound >= Number(defaultConfig.rounds || 12));
       let decisionValue = immediateValue;
       if (state.policy === "lookahead" && onClock && shortlist.has(candidate.id) && opponentPicks === 0) {
@@ -655,9 +776,6 @@
         || pointsFor(b.player) - pointsFor(a.player);
     });
     candidates.forEach((candidate, index) => { candidate.rank = index + 1; });
-    const pointRanks = new Map([...data.players]
-      .sort((a, b) => pointsFor(b) - pointsFor(a) || a.name.localeCompare(b.name))
-      .map((player, index) => [player.id, index + 1]));
     let recommendedPairKey = [...selectedPairs.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
     if (!recommendedPairKey && onClock && opponentPicks === 0 && candidates.length) {
       const leadId = candidates[0].player.id;
@@ -685,7 +803,9 @@
       ros_value: (a, b) => Number(a.restOfSeasonRank || 9999) - Number(b.restOfSeasonRank || 9999),
       ros_points: (a, b) => Number(b.restOfSeasonExpectedPoints || 0) - Number(a.restOfSeasonExpectedPoints || 0),
       finish: (a, b) => Number(b.projectedFinish || 0) - Number(a.projectedFinish || 0),
-      market: (a, b) => marketRankFor(a, recommendations.metrics) - marketRankFor(b, recommendations.metrics),
+      market: (a, b) => espnRankFor(a, recommendations.metrics) - espnRankFor(b, recommendations.metrics),
+      sleeper: (a, b) => sleeperRankFor(a, recommendations.metrics) - sleeperRankFor(b, recommendations.metrics),
+      consensus: (a, b) => consensusRankFor(a, recommendations.metrics) - consensusRankFor(b, recommendations.metrics),
       actual_draft: (a, b) => actualMetrics.get(a.id).rank - actualMetrics.get(b.id).rank,
       points: (a, b) => pointsFor(b) - pointsFor(a) || a.rank - b.rank,
       weekly: (a, b) => (pointsFor(b) / b.projectedGames) - (pointsFor(a) / a.projectedGames) || a.rank - b.rank,
@@ -761,6 +881,7 @@
   function playerDetail(player) {
     const range = scaledRange(player);
     const market = marketFor(player);
+    const sleeper = sleeperFor(player);
     const injury = [player.injury?.gameStatus, player.injury?.practiceStatus, player.injury?.bodyPart].filter(Boolean).join(" · ");
     const injuryRisk = player.injuryRisk || {};
     const injuryRiskMarkup = `
@@ -783,7 +904,7 @@
         <div><span>Week-0 draft projection</span><strong>${Number(player.draftProjectedPoints ?? player.projectedPoints).toFixed(1)}</strong></div>
         <div><span>ESPN half-PPR est.</span><strong>${expertPoints.toFixed(1)}</strong></div>
         <div><span>Draft difference</span><strong>${(Number(player.draftProjectedPoints ?? player.projectedPoints) - expertPoints >= 0 ? "+" : "")}${(Number(player.draftProjectedPoints ?? player.projectedPoints) - expertPoints).toFixed(1)}</strong></div>
-        <div><span>ESPN ADP</span><strong>${market.adp == null ? "-" : Number(market.adp).toFixed(1)}</strong></div>
+        <div><span>ESPN / Sleeper ADP</span><strong>${market.adp == null ? "-" : Number(market.adp).toFixed(1)} / ${sleeper?.adp == null ? "-" : Number(sleeper.adp).toFixed(1)}</strong></div>
       </div>` : "";
     const rosMarkup = `
       <div class="forecast-range">
@@ -825,6 +946,7 @@
       : recommendation?.rank || recommendations.metrics.get(player.id).rank;
     const hindsight = actualMetrics?.get(player.id);
     const market = marketFor(player);
+    const sleeper = sleeperFor(player);
     const displayedDraftValue = state.sort === "actual_draft" && hindsight ? hindsight.value : recommendation?.survivalProbability;
     const projectedPoints = pointsFor(player);
     const pointsRank = isRos
@@ -833,14 +955,16 @@
     const range = scaledRange(player);
     const rookieMeta = range.source === "historical rookie analogs" ? ` · rookie P10–P90 ${range.p10.toFixed(0)}–${range.p90.toFixed(0)}` : "";
     const injuryMeta = player.injury?.gameStatus ? ` · ${escapeHtml(player.injury.gameStatus)}` : "";
-    const marketMeta = !isRos && market?.adp ? ` · ESPN ADP ${Number(market.adp).toFixed(1)}` : "";
+    const marketMeta = !isRos && (market?.adp || sleeper?.adp)
+      ? ` · ESPN ${market?.adp ? Number(market.adp).toFixed(1) : "-"} · Sleeper ${sleeper?.adp ? Number(sleeper.adp).toFixed(1) : "-"}`
+      : "";
     const gamesMeta = isRos
       ? `${player.projectedGames} games remaining`
       : `${player.projectedGames} projected games`;
     const secondaryRank = isRos
       ? `${Number(player.restOfSeasonValueOverReplacement || 0) >= 0 ? "+" : ""}${Number(player.restOfSeasonValueOverReplacement || 0).toFixed(0)}`
-      : isValidationView() ? hindsight?.rank || "-" : market?.adp?.toFixed(1) || "-";
-    const secondaryRankLabel = isRos ? "VOR" : isValidationView() ? "Hindsight" : "ESPN ADP";
+      : isValidationView() ? hindsight?.rank || "-" : marketRankFor(player, recommendations.metrics).toFixed(1);
+    const secondaryRankLabel = isRos ? "VOR" : isValidationView() ? "Hindsight" : `${state.marketSource.toUpperCase()} ADP`;
     const perGameDenominator = isRos
       ? Math.max(Number(player.projectedGames || 0), 1)
       : Math.max(Number(player.projectedGames || 0), 1);
@@ -849,7 +973,8 @@
       : recommendation?.immediateGain;
     const displayedRisk = isRos
       ? `${Number(player.restOfSeasonExpectedGames || 0).toFixed(1)}`
-      : recommendation ? `${Math.round(displayedDraftValue * 100)}%` : "-";
+      : state.policy === "adp" ? marketRankFor(player, recommendations.metrics).toFixed(1)
+        : recommendation ? `${Math.round(displayedDraftValue * 100)}%` : "-";
     const actionsDisabled = status !== "available" || recommendations.draftComplete;
     return `
       <tr class="player-row${rowClass}" data-id="${escapeHtml(player.id)}">
@@ -877,7 +1002,7 @@
         <td class="number-cell actual-total actual-column">${Number(player.actualPoints || 0).toFixed(1)}</td>
         <td class="number-cell">${(projectedPoints / perGameDenominator).toFixed(2)}</td>
         <td class="number-cell draft-value" title="${isRos ? "Expected rest-of-season points over the format-derived replacement player" : "Expected managed weekly lineup points added to your current roster"}">${displayedGain == null ? "-" : `${displayedGain >= 0 ? "+" : ""}${displayedGain.toFixed(1)}`}</td>
-        <td class="number-cell draft-value" title="${isRos ? "Expected games available for the rest of the season" : `Estimated probability of remaining available to pick #${recommendations.onClock ? recommendations.nextTurn : recommendations.decisionPick}`}">${displayedRisk}</td>
+        <td class="number-cell draft-value" title="${isRos ? "Expected games available for the rest of the season" : state.policy === "adp" ? "Average draft position in the selected room market" : `Estimated probability of remaining available to pick #${recommendations.onClock ? recommendations.nextTurn : recommendations.decisionPick}`}">${displayedRisk}</td>
         <td>${statusMarkup(player, status)}</td>
         <td class="actions-cell">
           <div class="row-actions">
@@ -954,13 +1079,20 @@
     const bestRecommendation = best ? recommendations.byId.get(best.id) : null;
     $("bestHeading").textContent = recommendations.draftComplete ? "Draft complete" : recommendations.onClock ? "Pick now" : `Target for pick #${recommendations.decisionPick}`;
     $("bestName").textContent = recommendations.draftComplete ? "Roster locked" : best?.name || "No player available";
-    const pairNames = recommendations.recommendedPair.map((player) => player.name).join(" + ");
+    const pairNames = state.policy === "adp" ? "" : recommendations.recommendedPair.map((player) => player.name).join(" + ");
     $("bestMeta").textContent = pairNames
       ? `${recommendations.onClock ? "Recommended turn pair" : "Most frequent turn pair"} · ${pairNames}`
       : best ? `${best.position} · ${best.team} · ${scoringName()}` : "-";
-    $("bestPoints").textContent = recommendations.draftComplete ? "-" : bestRecommendation ? `${Math.round(bestRecommendation.survivalProbability * 100)}%` : "-";
-    $("bestMetricLabel").textContent = recommendations.onClock ? "Return survival" : "Survival to my pick";
-    $("bestMetricUnit").textContent = `256 ESPN-market simulations to #${recommendations.onClock ? recommendations.nextTurn : recommendations.decisionPick}`;
+    $("bestPoints").textContent = recommendations.draftComplete
+      ? "-"
+      : state.policy === "adp" && best ? marketRankFor(best, recommendations.metrics).toFixed(1)
+        : bestRecommendation ? `${Math.round(bestRecommendation.survivalProbability * 100)}%` : "-";
+    $("bestMetricLabel").textContent = state.policy === "adp"
+      ? "Market ADP"
+      : recommendations.onClock ? "Return survival" : "Survival to my pick";
+    $("bestMetricUnit").textContent = state.policy === "adp"
+      ? `${state.marketSource === "espn" ? "ESPN" : state.marketSource === "sleeper" ? "Sleeper" : "ESPN / Sleeper consensus"} order · legal roster finish enforced`
+      : `256 ${state.marketSource}-market simulations to #${recommendations.onClock ? recommendations.nextTurn : recommendations.decisionPick}`;
     $("availableCount").textContent = data.players.filter((player) => statusFor(player.id) === "available").length;
     $("mineCount").textContent = data.players.filter((player) => statusFor(player.id) === "mine").length;
     $("takenCount").textContent = data.players.filter((player) => statusFor(player.id) === "other").length;
@@ -974,9 +1106,10 @@
     const orderedPosterior = Object.entries(recommendations.posterior).sort((a, b) => b[1] - a[1]);
     const fullPosterior = orderedPosterior.map(([name, probability]) => `${roomModels[name].label} ${Math.round(probability * 100)}%`).join(" · ");
     const fixedModel = { balanced: "balanced", rb_rush: "rb_heavy", wr_rush: "wr_heavy", early_qb: "early_qb", zero_rb: "zero_rb" }[state.scenario];
-    $("roomPosteriorLabel").textContent = fixedModel
-      ? `Fixed: ${roomModels[fixedModel].label}`
-      : `Posterior: ${orderedPosterior.slice(0, 2).map(([name, probability]) => `${roomModels[name].label} ${Math.round(probability * 100)}%`).join(" · ")}`;
+    $("roomPosteriorLabel").textContent = state.policy === "adp"
+      ? "Not used by market policy"
+      : fixedModel ? `Fixed: ${roomModels[fixedModel].label}`
+        : `Posterior: ${orderedPosterior.slice(0, 2).map(([name, probability]) => `${roomModels[name].label} ${Math.round(probability * 100)}%`).join(" · ")}`;
     $("roomPosteriorLabel").title = fullPosterior;
   }
 
@@ -984,22 +1117,101 @@
     const isRos = state.view === "ros";
     document.body.classList.toggle("ros-view", isRos);
     $("pageHeading").textContent = isRos ? "Rest-of-season values" : "Draft recommendations";
-    $("draftRankSub").textContent = isRos ? "Expected value · VOR" : isValidationView() ? "Live · Hindsight" : "Live · ESPN ADP";
+    $("draftRankSub").textContent = isRos ? "Expected value · VOR" : isValidationView() ? "Live · Hindsight" : state.policy === "adp" ? `Live · ${state.marketSource.toUpperCase()} ADP` : "Live · model policy";
     $("pointsRankSub").textContent = isRos ? "ROS points · projected finish" : isValidationView() ? "Model · Actual" : "Model";
     $("projectionHeader").textContent = isRos ? "ROS projection" : "Projection";
     $("actualHeader").textContent = isRos ? "To date" : "Actual";
-    $("valueHeader").textContent = isRos ? "ROS VOR" : "Roster gain";
-    $("riskHeader").textContent = isRos ? "Exp. games" : "Survival";
+    $("valueHeader").textContent = isRos ? "ROS VOR" : state.policy === "adp" ? "Model VOR" : "Roster gain";
+    $("riskHeader").textContent = isRos ? "Exp. games" : state.policy === "adp" ? "Market ADP" : "Survival";
     const recommendations = recommendationState();
     const actualMetrics = isValidationView() ? formatMetrics((player) => player.actualPoints) : null;
     const players = filteredPlayers(recommendations, actualMetrics);
     $("rankingsBody").innerHTML = players.map((player) => playerRow(player, recommendations, actualMetrics)).join("");
     $("emptyState").hidden = players.length > 0;
     renderSummary(recommendations);
+    renderDraftHistory();
     if (window.lucide) window.lucide.createIcons();
   }
 
+  function renderDraftHistory() {
+    $("draftHistoryCount").textContent = `${state.picks.length} ${state.picks.length === 1 ? "pick" : "picks"}`;
+    if (!state.picks.length) {
+      $("draftHistoryBody").innerHTML = '<p class="empty-state">No picks recorded yet.</p>';
+      return;
+    }
+    $("draftHistoryBody").innerHTML = state.picks.map((pick, index) => {
+      const player = data.players.find((item) => item.id === pick.id);
+      const round = Math.floor(index / state.teams) + 1;
+      const slot = (index % state.teams) + 1;
+      return `<div class="history-row" data-index="${index}">
+        <span class="history-pick">${round}.${String(slot).padStart(2, "0")}</span>
+        <label><span class="sr-only">Player at pick ${index + 1}</span><input data-history-player type="text" list="playerOptions" value="${escapeHtml(player ? playerLabel(player) : pick.id)}"></label>
+        <label class="history-owner"><span class="sr-only">Owner at pick ${index + 1}</span><select data-history-owner><option value="other"${pick.owner === "other" ? " selected" : ""}>Taken · T${snakeTeam(index + 1)}</option><option value="mine"${pick.owner === "mine" ? " selected" : ""}>Mine</option></select></label>
+        <button class="icon-button" type="button" data-history-action="up" title="Move pick earlier" aria-label="Move pick ${index + 1} earlier"${index === 0 ? " disabled" : ""}><i data-lucide="arrow-up" aria-hidden="true"></i></button>
+        <button class="icon-button" type="button" data-history-action="down" title="Move pick later" aria-label="Move pick ${index + 1} later"${index === state.picks.length - 1 ? " disabled" : ""}><i data-lucide="arrow-down" aria-hidden="true"></i></button>
+        <button class="icon-button" type="button" data-history-action="delete" title="Delete pick" aria-label="Delete pick ${index + 1}"><i data-lucide="trash-2" aria-hidden="true"></i></button>
+      </div>`;
+    }).join("");
+  }
+
   function bindEvents() {
+    $("draftHistoryBody").addEventListener("change", (event) => {
+      const row = event.target.closest(".history-row[data-index]");
+      if (!row) return;
+      const index = Number(row.dataset.index);
+      if (event.target.matches("[data-history-owner]")) {
+        state.picks[index].owner = event.target.value;
+        commitDraftHistory(`Pick ${index + 1} owner updated.`);
+        return;
+      }
+      if (!event.target.matches("[data-history-player]")) return;
+      const player = resolvePlayerInput(event.target.value);
+      const duplicate = player && state.picks.some((pick, pickIndex) => pickIndex !== index && pick.id === player.id);
+      event.target.setCustomValidity(player ? duplicate ? "That player is already in the draft." : "" : "Choose a player from the list.");
+      if (!player || duplicate) {
+        event.target.reportValidity();
+        return;
+      }
+      state.picks[index].id = player.id;
+      commitDraftHistory(`Pick ${index + 1} changed to ${player.name}.`);
+    });
+    $("draftHistoryBody").addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-history-action]");
+      const row = event.target.closest(".history-row[data-index]");
+      if (!button || !row) return;
+      const index = Number(row.dataset.index);
+      if (button.dataset.historyAction === "delete") {
+        const [removed] = state.picks.splice(index, 1);
+        const player = data.players.find((item) => item.id === removed?.id);
+        commitDraftHistory(`${player?.name || "Pick"} removed from draft history.`);
+        return;
+      }
+      const target = button.dataset.historyAction === "up" ? index - 1 : index + 1;
+      if (target < 0 || target >= state.picks.length) return;
+      [state.picks[index], state.picks[target]] = [state.picks[target], state.picks[index]];
+      commitDraftHistory(`Pick moved to #${target + 1}.`);
+    });
+    $("historyAddButton").addEventListener("click", () => {
+      const input = $("historyPlayerInput");
+      const player = resolvePlayerInput(input.value);
+      const duplicate = player && statusFor(player.id) !== "available";
+      input.setCustomValidity(player ? duplicate ? "That player is already in the draft." : "" : "Choose a player from the list.");
+      if (!player || duplicate) {
+        input.reportValidity();
+        return;
+      }
+      const owner = $("historyOwnerSelect").value;
+      state.picks.push({ id: player.id, owner, changedAt: Date.now() });
+      input.value = "";
+      commitDraftHistory(`${player.name} added as pick ${state.picks.length}.`);
+    });
+    $("historyPlayerInput").addEventListener("input", (event) => event.target.setCustomValidity(""));
+    $("historyPlayerInput").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        $("historyAddButton").click();
+      }
+    });
     $("saveDraftButton").addEventListener("click", () => {
       const input = $("draftNameInput");
       const name = cleanDraftName(input.value);
@@ -1109,6 +1321,11 @@
       savePicks();
       render();
     });
+    $("marketSourceSelect").addEventListener("change", (event) => {
+      state.marketSource = event.target.value;
+      savePicks();
+      render();
+    });
     $("policySelect").addEventListener("change", (event) => {
       state.policy = event.target.value;
       savePicks();
@@ -1164,13 +1381,16 @@
     }
     loadDraftLibrary();
     loadPicks();
+    $("playerOptions").innerHTML = data.players
+      .map((player) => `<option value="${escapeHtml(playerLabel(player))}"></option>`)
+      .join("");
     syncDraftSetupControls();
     renderDraftRecordControls(true);
     const liveForecast = ["preseason", "rest_of_season"].includes(data.forecastType);
     $("seasonLabel").textContent = data.forecastType === "preseason" ? `${data.projectionSeason} preseason` : data.forecastType === "rest_of_season" ? `${data.projectionSeason} Week ${data.completedWeek}` : `${data.projectionSeason} validation season`;
     $("modelStatus").textContent = `${scoringName()} · ${liveForecast ? "current forecast" : "development model"}`;
     $("methodLabel").textContent = liveForecast
-      ? `${data.scope}. The draft view preserves the Week-0 projection and models ESPN-informed room availability. Rest-of-season value fixes completed results and updates future matchups and roles from current evidence. Availability scenarios affect lineup and bench value, not the published mean.`
+      ? `${data.scope}. The ${policyAudit.holdoutSeason || 2024} holdout selected market ADP as the default; it follows the selected room's ordering while enforcing a legal roster finish. Projection-based roster and lookahead policies remain experimental. Rest-of-season value fixes completed results and updates future matchups and roles from current evidence.`
       : `${data.scope}. Recommendations combine game-level forecasts, format-derived replacement value, your roster, and the projected pool at your next snake turn; this remains a ${data.projectionSeason} out-of-sample validation board.`;
     $("footerScope").textContent = `${data.projectionSeason} · ${scoringName()} · ${data.players.length} fantasy-relevant players`;
     $("injuryStatus").textContent = data.injuryReportsAvailable

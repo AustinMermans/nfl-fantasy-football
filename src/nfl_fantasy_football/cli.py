@@ -11,6 +11,14 @@ from .calibration import nested_calibration_backtest
 from .config import PROJECT_ROOT, load_config
 from .data import download_nflverse, load_player_games
 from .draft_board import build_player_rankings, export_draft_board, export_preseason_board
+from .draft_backtest import (
+    add_market_implied_points,
+    build_historical_player_pool,
+    fetch_mfl_adp_snapshot,
+    policy_grid,
+    simulate_historical_draft,
+    summarize_policy_results,
+)
 from .draft_strategy import simulate_draft_policy
 from .evaluation import BacktestSpec, summarize_backtest, walk_forward_backtest
 from .espn import write_espn_market
@@ -31,6 +39,7 @@ from .market import (
 from .participation import summarize_participation, walk_forward_participation
 from .production import build_season_forecasts, write_production_artifacts
 from .preseason import walk_forward_preseason_backtest
+from .sleeper import write_sleeper_market
 
 
 DEFAULT_TARGETS = ("passing_yards", "rushing_yards", "receiving_yards")
@@ -288,6 +297,152 @@ def _draft_policy_stress_test(args: argparse.Namespace) -> None:
     print(f"wrote draft-policy stress test to {destination}")
 
 
+def _draft_policy_backtest(args: argparse.Namespace) -> None:
+    """Tune a market-anchored policy, then evaluate one untouched season."""
+    history = pd.read_parquet(PROJECT_ROOT / "data" / "processed" / "player_games.parquet")
+    preseason = pd.read_parquet(PROJECT_ROOT / "results" / "preseason_backtest_predictions.parquet")
+    cache_dir = PROJECT_ROOT / "data" / "raw" / "mfl_adp"
+    seasons = list(range(args.first_season, args.holdout_season + 1))
+    pools: dict[tuple[int, int], pd.DataFrame] = {}
+    coverage_rows: list[dict[str, object]] = []
+    for teams in args.team_sizes:
+        prior_pools: list[pd.DataFrame] = []
+        for season in seasons:
+            print(f"building {season} {teams}-team market pool...", flush=True)
+            adp = fetch_mfl_adp_snapshot(
+                season,
+                teams,
+                cache_dir=cache_dir,
+                period=args.period,
+                cutoff=args.cutoff,
+                refresh=args.refresh,
+            )
+            pool = build_historical_player_pool(
+                history, preseason, adp, season=season
+            )
+            training = pd.concat(prior_pools, ignore_index=True) if prior_pools else pd.DataFrame(
+                columns=["position", "adp", "actual_points"]
+            )
+            pool = add_market_implied_points(pool, training)
+            pools[(season, teams)] = pool
+            coverage_rows.append(
+                {
+                    "season": season,
+                    "teams": teams,
+                    "market_players": len(pool),
+                    "realized_match_rate": float(pool["actual_weekly"].map(bool).mean()),
+                    "model_match_rate": float(pool["season_ensemble"].notna().mean()),
+                }
+            )
+            prior_pools.append(pool)
+
+    configurations = policy_grid(
+        model_weights=args.model_weights,
+        bench_weights=args.bench_weights,
+    )
+    development_rows: list[dict[str, object]] = []
+    baseline_rows: list[dict[str, object]] = []
+    development_seasons = range(args.first_season + 1, args.holdout_season)
+    for teams in args.team_sizes:
+        print(f"simulating development policies for {teams}-team leagues...", flush=True)
+        for season in development_seasons:
+            pool = pools[(season, teams)]
+            for draft_slot in range(1, teams + 1):
+                baseline = simulate_historical_draft(
+                    pool,
+                    teams=teams,
+                    draft_slot=draft_slot,
+                    rounds=args.rounds,
+                    strategy="adp",
+                )
+                baseline_rows.append({**baseline, "season": season, "split": "development"})
+                for config in configurations:
+                    result = simulate_historical_draft(
+                        pool,
+                        teams=teams,
+                        draft_slot=draft_slot,
+                        rounds=args.rounds,
+                        strategy="hybrid",
+                        policy=config,
+                    )
+                    development_rows.append(
+                        {
+                            **result,
+                            "season": season,
+                            "split": "development",
+                            "model_weight": config.model_weight,
+                            "bench_weight": config.bench_weight,
+                            "lookahead": config.lookahead,
+                        }
+                    )
+
+    development = pd.DataFrame(development_rows)
+    selection = (
+        development.groupby(
+            ["teams", "policy", "model_weight", "bench_weight", "lookahead"],
+            as_index=False,
+        )
+        .agg(
+            development_win_rate=("h2h_win_rate", "mean"),
+            development_points=("managed_points_week_1_17", "mean"),
+        )
+        .sort_values(
+            ["teams", "development_win_rate", "development_points", "model_weight"],
+            ascending=[True, False, False, True],
+        )
+        .groupby("teams", as_index=False)
+        .first()
+    )
+
+    holdout_rows: list[dict[str, object]] = []
+    for selected in selection.itertuples():
+        teams = int(selected.teams)
+        config = next(item for item in configurations if item.name == selected.policy)
+        pool = pools[(args.holdout_season, teams)]
+        for draft_slot in range(1, teams + 1):
+            for strategy, policy in (("adp", None), ("hybrid", config)):
+                result = simulate_historical_draft(
+                    pool,
+                    teams=teams,
+                    draft_slot=draft_slot,
+                    rounds=args.rounds,
+                    strategy=strategy,
+                    policy=policy,
+                )
+                holdout_rows.append(
+                    {
+                        **result,
+                        "season": args.holdout_season,
+                        "split": "holdout",
+                        "model_weight": config.model_weight if policy else 0.0,
+                        "bench_weight": config.bench_weight if policy else 0.0,
+                        "lookahead": config.lookahead if policy else False,
+                    }
+                )
+
+    all_results = pd.concat(
+        [pd.DataFrame(baseline_rows), development, pd.DataFrame(holdout_rows)],
+        ignore_index=True,
+    )
+    summary = summarize_policy_results(all_results)
+    results_dir = PROJECT_ROOT / "results"
+    all_results.to_csv(results_dir / "draft_policy_backtest.csv", index=False)
+    summary.to_csv(results_dir / "draft_policy_backtest_summary.csv", index=False)
+    selection.to_csv(results_dir / "draft_policy_selected.csv", index=False)
+    pd.DataFrame(coverage_rows).to_csv(
+        results_dir / "draft_policy_market_coverage.csv", index=False
+    )
+    print("\nselected policies")
+    print(selection.round(4).to_string(index=False))
+    print("\nholdout results")
+    print(
+        summary[summary["split"].eq("holdout")]
+        .round(4)
+        .to_string(index=False)
+    )
+    print(f"wrote historical draft-policy results to {results_dir}")
+
+
 def _preseason_forecast(args: argparse.Namespace) -> None:
     fantasy, components, features, as_of, actual_history, completed_week = build_season_forecasts(
         args.season, refresh=args.refresh
@@ -313,6 +468,13 @@ def _preseason_forecast(args: argparse.Namespace) -> None:
             print(f"wrote ESPN market prior to {market_path}")
         except (URLError, TimeoutError, json.JSONDecodeError) as error:
             print(f"warning: ESPN market refresh failed; retained existing prior: {error}")
+    sleeper_path = PROJECT_ROOT / "web" / "sleeper.js"
+    if args.refresh or not sleeper_path.exists():
+        try:
+            write_sleeper_market(args.season, destination=sleeper_path)
+            print(f"wrote Sleeper market cross-check to {sleeper_path}")
+        except (URLError, TimeoutError, json.JSONDecodeError) as error:
+            print(f"warning: Sleeper market refresh failed; retained existing cross-check: {error}")
 
 
 def _preseason_backtest(args: argparse.Namespace) -> None:
@@ -337,6 +499,11 @@ def _preseason_backtest(args: argparse.Namespace) -> None:
 def _espn_market(args: argparse.Namespace) -> None:
     destination = write_espn_market(args.season)
     print(f"wrote ESPN market prior to {destination}")
+
+
+def _sleeper_market(args: argparse.Namespace) -> None:
+    destination = write_sleeper_market(args.season)
+    print(f"wrote Sleeper market cross-check to {destination}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -396,6 +563,23 @@ def build_parser() -> argparse.ArgumentParser:
         "--scenarios", nargs="+", default=["balanced", "rb_rush", "wr_rush"]
     )
     draft_policy.set_defaults(handler=_draft_policy_stress_test)
+    policy_backtest = commands.add_parser("draft-policy-backtest")
+    policy_backtest.add_argument("--first-season", type=int, default=2018)
+    policy_backtest.add_argument("--holdout-season", type=int, default=2024)
+    policy_backtest.add_argument(
+        "--team-sizes", nargs="+", type=int, default=[8, 10, 12, 14]
+    )
+    policy_backtest.add_argument("--rounds", type=int, default=17)
+    policy_backtest.add_argument("--period", default="AUG15")
+    policy_backtest.add_argument("--cutoff", type=int, default=1)
+    policy_backtest.add_argument(
+        "--model-weights", nargs="+", type=float, default=[0.0, 0.25, 0.5]
+    )
+    policy_backtest.add_argument(
+        "--bench-weights", nargs="+", type=float, default=[0.15]
+    )
+    policy_backtest.add_argument("--refresh", action="store_true")
+    policy_backtest.set_defaults(handler=_draft_policy_backtest)
     preseason = commands.add_parser("preseason-forecast")
     preseason.add_argument("--season", type=int, required=True)
     preseason.add_argument("--refresh", action="store_true")
@@ -411,6 +595,9 @@ def build_parser() -> argparse.ArgumentParser:
     espn_market = commands.add_parser("espn-market")
     espn_market.add_argument("--season", type=int, required=True)
     espn_market.set_defaults(handler=_espn_market)
+    sleeper_market = commands.add_parser("sleeper-market")
+    sleeper_market.add_argument("--season", type=int, required=True)
+    sleeper_market.set_defaults(handler=_sleeper_market)
     return parser
 
 

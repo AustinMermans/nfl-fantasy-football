@@ -36,3 +36,26 @@ def test_live_components_are_labeled_as_unreconciled_diagnostics() -> None:
 
     assert "Raw game-model components" in source
     assert "unreconciled diagnostic" in source
+
+
+def test_live_board_defaults_to_validated_market_and_supports_full_history_editing() -> None:
+    source = (PROJECT_ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    html = (PROJECT_ROOT / "web" / "index.html").read_text(encoding="utf-8")
+
+    assert 'defaultPolicy: "adp"' in source
+    assert 'value="adp">Validated market ADP' in html
+    assert 'id="marketSourceSelect"' in html
+    assert 'id="draftHistoryBody"' in html
+    assert 'data-history-action="delete"' in source
+    assert 'data-history-action="up"' in source
+
+
+def test_published_sleeper_cross_check_contains_current_half_ppr_adp() -> None:
+    raw = (PROJECT_ROOT / "web" / "sleeper.js").read_text(encoding="utf-8").strip()
+    prefix = "window.NFL_SLEEPER_MARKET = "
+
+    assert raw.startswith(prefix)
+    payload = json.loads(raw[len(prefix) :].removesuffix(";"))
+    assert payload["season"] == 2026
+    assert payload["field"] == "adp_half_ppr"
+    assert len(payload["players"]) >= 100

@@ -9,6 +9,15 @@
 - [nflverse schedules](https://github.com/nflverse/nfldata/blob/master/data/games.csv): schedule, result, rest, weather, surface, and consensus closing-line fields.
 - [nflverse player identifiers](https://github.com/nflverse/nflverse-data/releases/tag/players): GSIS, PFR, ESPN, PFF, and other cross-source IDs.
 - [ESPN Fantasy Football player pool](https://fantasy.espn.com/football/players/projections): current ADP, Standard/PPR rank, injury status, and ESPN season projection. ADP/rank are deployed only as the opponent-selection prior; they do not alter this project's forecast mean.
+- [Sleeper API](https://docs.sleeper.com/): documented current player identity and
+  draft endpoints. The board also reads the current projection feed's
+  `adp_half_ppr` field as a failure-tolerant live cross-check; that projection
+  endpoint is not part of Sleeper's documented historical contract and is not
+  treated as a complete league-size series.
+- [MyFantasyLeague developer API](https://myfantasyleague.wordpress.com/2008/08/06/developer-api/):
+  historical AUG15 Standard/PPR ADP by season and league size. The draft-policy
+  backtest interpolates half PPR and caches the exact raw responses under
+  `data/raw/mfl_adp/`.
 
 nflverse publishes these automated assets in Parquet and other formats. Player
 stats update daily during the season, rosters update daily, and snap counts are

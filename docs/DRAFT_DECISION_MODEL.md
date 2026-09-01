@@ -33,7 +33,44 @@ opportunity budget. A future version should estimate a smoothed rookie role
 state, validate interval coverage, update it with preseason depth, and resample
 entire historical component trajectories within that role.
 
+## Historical policy benchmark
+
+The primary benchmark is legal ADP drafting, not a fixed projection list. For
+each historical draft the baseline takes the best available market player while
+enforcing roster maxima and preserving enough remaining selections to fill every
+starter slot. All other simulated managers use that same fixed policy and react
+only to availability and their own roster, so policy comparisons do not change
+the opponents between treatments.
+
+The market snapshots are MyFantasyLeague AUG15 ADP for the exact season and
+8-, 10-, 12-, or 14-team format. Standard and PPR ADPs are interpolated to half
+PPR. The policy pool joins those snapshots to frozen Week-0 model forecasts and
+realized weekly half-PPR points. Missing rookies and unmatched forecasts fall
+back to market-implied points rather than hindsight.
+
+Candidate weights and lookahead were selected on 2019-2023, then evaluated once
+on 2024. Every development winner assigned the player forecast zero weight. On
+the holdout, candidate minus ADP H2H win-rate deltas were `-0.0651`, `-0.1270`,
+`-0.1466`, and `-0.1652` for 8, 10, 12, and 14 teams. Managed-point deltas were
+`-48.02`, `-131.31`, `-188.81`, and `-213.19`. Therefore no candidate was
+promoted and the live board defaults to the legal market-order policy.
+
+H2H win rate uses each managed lineup against every other roster in Weeks 1-14;
+season points use managed legal lineups in Weeks 1-17. Averaging all draft slots
+makes the all-ADP league baseline exactly `0.500` by construction. This is a
+policy test, not evidence that a 0.500 team wins half of real leagues.
+
 ## Live pick policy
+
+The validated default takes the highest available ADP player from the selected
+room market while preserving a legal roster finish. ESPN is the default because
+the current league drafts on ESPN. Sleeper half-PPR ADP and an ESPN/Sleeper mean
+are selectable for rooms hosted elsewhere. The list is recalculated after every
+logged or edited pick, so unavailable players disappear and late-round position
+requirements can change the next legal selection.
+
+The weekly-roster and probability-lookahead options below remain experimental
+diagnostics rather than the deployed optimum.
 
 For each candidate `a`, the board estimates:
 
@@ -74,9 +111,10 @@ This is a declared fallback assumption until the opponent model is fitted to
 timestamped draft sequences.
 
 This is a transparent quantal-response prior. Current ESPN ADP and Standard/PPR
-ranks are ingested daily into the opponent-choice layer, not the player-value
-forecast. Its probabilities are not yet historically calibrated because the
-repository does not contain point-in-time draft-room logs.
+ranks or current Sleeper half-PPR ADP are ingested daily into the experimental
+opponent-choice layer, not the player-value forecast. Its probabilities are not
+historically calibrated because the repository does not contain raw manager-level
+draft-room sequences.
 
 The adaptive room model begins with a 40% Balanced prior and 15% each on
 RB-heavy, WR-heavy, Early-QB, and Zero-RB. For every logged opponent pick, it
@@ -104,9 +142,9 @@ Their convergent recommendations are:
 
 ## Data roadmap
 
-- Snapshot the Fantasy Football Calculator ADP API daily by scoring, league
-  size, retrieval time, and response hash.
-- Cross-check actual-draft behavior with the MyFantasyLeague ADP report.
+- Continue timestamped ESPN and Sleeper snapshots by scoring, retrieval time,
+  and response hash.
+- Retain MyFantasyLeague league-size ADP snapshots for historical policy tests.
 - Store exact sequences only from sources and leagues whose access allows it.
 - Fit a pick-level Plackett-Luce or hazard model with ADP distribution, roster
   need, position runs, format, round, and manager effects.
@@ -115,16 +153,17 @@ Their convergent recommendations are:
 ## Validation gates
 
 Use frozen Week-0 snapshots for 2018-2024 and leave 2025 unopened until all
-choices are frozen. Evaluate player distributions with CRPS, interval coverage,
+player-model choices are frozen. Evaluate player distributions with CRPS, interval coverage,
 and joint energy/variogram scores. Evaluate survival with log loss, Brier score,
 ICI, slope/intercept, and false-wait/false-reach rates. Evaluate the complete
 policy with common-random-number regret versus roster-aware greedy, format VOR,
 ADP/ECR, and a nondeployable outcome oracle.
 
-Promotion requires improvement in at least five of seven development seasons,
-season-clustered uncertainty intervals, and gains above a family-wise maximum
-placebo-feature benchmark. Until those gates pass, ranges and survival values
-remain decision aids rather than calibrated probabilities.
+Future policy promotion requires a positive untouched-season win-rate delta
+against legal ADP, stability across league sizes and draft slots, and no material
+managed-points regression. The current candidate failed that first gate. Player
+feature promotion separately retains the expanding-window and placebo-feature
+requirements.
 
 ## Injuries and starters
 

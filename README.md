@@ -35,10 +35,12 @@ nfl-fantasy market-catalog-audit
 nfl-fantasy market-feature-audit --quotes path/to/canonical_quotes.parquet
 nfl-fantasy draft-board
 nfl-fantasy draft-policy-stress-test
+nfl-fantasy draft-policy-backtest --team-sizes 8 10 12 14
 nfl-fantasy preseason-forecast --season 2026 --refresh
 nfl-fantasy season-forecast --season 2026 --refresh
 nfl-fantasy preseason-backtest
 nfl-fantasy espn-market --season 2026
+nfl-fantasy sleeper-market --season 2026
 python -m pytest
 ```
 
@@ -68,6 +70,8 @@ Run `nfl-fantasy draft-board` to rebuild the retrospective validation view, or
 board, then open `web/index.html`. The interface supports search and position
 filters, expands each player into opponent-aware game-by-game and component
 projections, and stores Mine/Taken actions and undo history in the local browser.
+The full draft ledger is editable: any pick can be replaced, reassigned, moved,
+deleted, or inserted after a missed entry.
 You can also give a draft a unique name, save multiple draft records, reopen them,
 and continue with automatic local saves after every pick or setting change. Names
 are unique without regard to capitalization. These records stay in that browser
@@ -124,22 +128,23 @@ designation applies only to its reported game week and is not normalized away.
 Player recurrence, severity, and BMI modifiers remain audit-only because the
 historical active-roster panel excludes many IR/PUP spells.
 
-At every Mine/Taken action, the board recomputes the snake state and runs 256
-common-seed simulations of the intervening picks. Opponents follow a
-roster-aware quantal-response policy centered on current ESPN ADP and rank; the
-ESPN market input never changes our player forecast mean. Logged opponent
-picks update a Bayesian mixture of Balanced, RB-heavy, WR-heavy, Early-QB, and
-Zero-RB room styles. Before your turn, all earlier picks are simulated and the
-board aggregates the best state-contingent turn pair; consecutive picks 10/11
-are optimized together. Candidate utility is the expected managed weekly lineup
-value after the next turn. Once the 17-player roster is full, a candidate must
-improve the roster after the weakest asset is dropped.
+The default live recommendation is now the strongest validated policy: take the
+best available player in the selected market order while preserving the ability
+to complete a legal roster. The room market can be ESPN, Sleeper half-PPR ADP,
+or their mean; ESPN remains the default for an ESPN-hosted draft. Market ADP is
+an opponent and timing input and never changes the published player forecast.
+
+The projection-based weekly-roster and probability-lookahead policies remain
+selectable experiments. At every Mine/Taken action they recompute snake state,
+infer roster needs, update a Bayesian room-style mixture, and run 256 common-seed
+simulations of intervening selections. They are no longer the default because
+they failed the independent historical promotion test below.
 Controls support 8-16 teams, any snake slot, Standard/Half/Full PPR, four- or
 six-point passing touchdowns, interception scoring, and RB/WR stress scenarios.
 
-This is a low-confidence Bayesian response model, not a historically fitted
-ADP-survival model or a Nash-equilibrium claim. Daily ESPN snapshots are now
-deployed; rolling-origin calibration against raw draft sequences remains future work.
+Current ESPN and Sleeper snapshots are deployed. Sleeper's current projection
+feed is used only as a cross-check because it does not provide the complete
+league-size-specific historical series needed by this backtest.
 
 `draft-policy-stress-test` replays every snake slot against balanced, RB-run,
 and WR-run opponent policies and reports projected and realized starter points.
@@ -148,15 +153,19 @@ does not consistently beat a simpler roster-aware greedy policy: it wins the RB
 run and trails slightly in balanced and WR-run rooms. The report is written to
 `results/draft_policy_stress_test.csv`.
 
-Because the old lookahead failed to dominate roster-aware greedy, the new
-probability lookahead is presented as an unvalidated decision aid and can be
-switched to weekly roster value.
+`draft-policy-backtest` is the valid preseason policy evaluation. It uses
+MyFantasyLeague AUG15 ADP by season and league size, frozen Week-0 model
+forecasts, fixed legal roster-aware ADP opponents, and realized managed weekly
+lineups. Policies were selected on 2019-2023 and evaluated once on 2024.
+Development chose zero model weight in 8-, 10-, 12-, and 14-team leagues. On the
+2024 holdout, the selected candidates trailed legal ADP by `6.5`, `12.7`, `14.7`,
+and `16.5` H2H win-rate percentage points, respectively. The failed candidates
+were not promoted; legal ADP is the deployed default.
 
-This is deliberately called a stress test, not a preseason backtest. The 2024
-board aggregates weekly out-of-sample forecasts that use information available
-before each game, including in-season role and injury updates, rather than one
-frozen snapshot available before Week 1. A valid preseason policy evaluation
-still requires yearly Week-0 feature snapshots and point-in-time ADP.
+This result does not prove ADP is universally optimal. It establishes that the
+current forecast and heuristic draft layer have not beaten the much stronger
+market baseline under this simulation design. Raw manager-level draft sequences,
+auction values, trades, waivers, and playoff scheduling remain outside the test.
 
 The current board omits hindsight and actual columns until 2026 games are
 completed. Historical validation outputs remain in `results/`; no realized

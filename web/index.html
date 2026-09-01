@@ -6,11 +6,13 @@
   <meta name="color-scheme" content="light">
   <title>NFL Fantasy Draft Board</title>
   <link rel="preconnect" href="https://a.espncdn.com">
-  <link rel="stylesheet" href="styles.css?v=20260901-drafts-v1">
+  <link rel="stylesheet" href="styles.css?v=20260901-policy-v2">
   <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
   <script src="projections.js?v=20260901-ros-v1"></script>
   <script src="market.js?v=20260901-market-v1"></script>
-  <script src="app.js?v=20260901-drafts-v1" defer></script>
+  <script src="sleeper.js?v=20260901-market-v1"></script>
+  <script src="draft-policy.js?v=20260901-policy-v1"></script>
+  <script src="app.js?v=20260901-policy-v2" defer></script>
 </head>
 <body>
   <div id="error" class="fatal" hidden></div>
@@ -102,8 +104,17 @@
         <label class="draft-only">
           <span>Recommendation policy</span>
           <select id="policySelect">
-            <option value="lookahead">Probability lookahead</option>
-            <option value="roster">Weekly roster value</option>
+            <option value="adp">Validated market ADP</option>
+            <option value="lookahead">Experimental probability lookahead</option>
+            <option value="roster">Experimental weekly roster value</option>
+          </select>
+        </label>
+        <label class="draft-only">
+          <span>Draft-room market</span>
+          <select id="marketSourceSelect">
+            <option value="espn">ESPN</option>
+            <option value="sleeper">Sleeper</option>
+            <option value="consensus">ESPN / Sleeper consensus</option>
           </select>
         </label>
         <div class="roster-needs">
@@ -153,6 +164,34 @@
         <div><span id="takenLabel">Drafted</span><strong id="takenCount">0</strong><small>by others</small></div>
       </section>
 
+      <details id="draftHistory" class="draft-history draft-only">
+        <summary>
+          <span>Draft history</span>
+          <strong id="draftHistoryCount">0 picks</strong>
+          <i data-lucide="chevron-down" aria-hidden="true"></i>
+        </summary>
+        <div class="history-editor">
+          <div id="draftHistoryBody" class="history-list"></div>
+          <div class="history-add">
+            <label>
+              <span class="sr-only">Player to add</span>
+              <input id="historyPlayerInput" type="text" list="playerOptions" placeholder="Add a missed pick" autocomplete="off">
+            </label>
+            <label>
+              <span class="sr-only">Pick owner</span>
+              <select id="historyOwnerSelect">
+                <option value="other">Taken</option>
+                <option value="mine">Mine</option>
+              </select>
+            </label>
+            <button id="historyAddButton" class="icon-button" type="button" title="Add pick" aria-label="Add pick">
+              <i data-lucide="plus" aria-hidden="true"></i>
+            </button>
+          </div>
+        </div>
+      </details>
+      <datalist id="playerOptions"></datalist>
+
       <section class="toolbar" aria-label="Projection filters">
         <div id="positionFilters" class="segmented-control" role="group" aria-label="Position">
           <button class="active" type="button" data-position="ALL">All</button>
@@ -176,6 +215,8 @@
               <option value="ros_points">Rest-of-season points</option>
               <option value="finish">Projected final points</option>
               <option value="market">ESPN average draft position</option>
+              <option value="sleeper">Sleeper half-PPR ADP</option>
+              <option value="consensus">ESPN / Sleeper consensus</option>
               <option value="actual_draft">Hindsight format value</option>
               <option value="points">Model season points</option>
               <option value="weekly">Model points per game</option>

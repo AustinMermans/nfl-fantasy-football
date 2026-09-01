@@ -163,8 +163,36 @@ is the unweighted point difference from the last format-derived starter; the
 former fixed QB12/RB30/WR36/TE12/K12 ranks and `0.55/1.0/1.0/0.8/0.05`
 positional multipliers have been removed.
 
-The live layer evaluates the available pool, inferred opponent rosters, the
-user's roster, snake slot, and picks until the next turn. ESPN ADP and the
+### Draft-policy validation
+
+The draft policy now has a genuine preseason historical benchmark. Public
+MyFantasyLeague AUG15 ADP was collected for 2018-2024 at 8, 10, 12, and 14
+teams, with Standard/PPR ranks interpolated to half PPR. Frozen Week-0 model
+forecasts were joined without opening the 2025 player-model holdout. Opponents
+used one fixed, legal roster-aware ADP policy in every treatment. Drafted rosters
+were scored with realized best legal weekly lineups, Weeks 1-17, and pairwise
+H2H win rates through Week 14.
+
+Policy choices were selected on 2019-2023 and evaluated once on 2024. All four
+development winners used `0.0` model weight, indicating that the forecast did
+not add draft-order information beyond the market even before the holdout.
+
+| Teams | Selected candidate | ADP H2H | Candidate H2H | Delta | Point delta |
+|--:|:--|--:|--:|--:|--:|
+| 8 | Market points + lookahead | 0.5000 | 0.4349 | -0.0651 | -48.02 |
+| 10 | Market points + lookahead | 0.5000 | 0.3730 | -0.1270 | -131.31 |
+| 12 | Market points + greedy roster | 0.5000 | 0.3534 | -0.1466 | -188.81 |
+| 14 | Market points + greedy roster | 0.5000 | 0.3348 | -0.1652 | -213.19 |
+
+No candidate passed the promotion gate. The production board therefore defaults
+to legal market ADP rather than forecast value or probability lookahead. ESPN is
+the default room prior for an ESPN draft; current Sleeper half-PPR ADP and an
+ESPN/Sleeper consensus are available as live comparisons. Sleeper is not claimed
+as a historical baseline because its public interface does not expose the same
+complete league-size series.
+
+The experimental live layer evaluates the available pool, inferred opponent
+rosters, the user's roster, snake slot, and picks until the next turn. ESPN ADP and the
 midpoint of ESPN Standard/PPR rank form a separate opponent-availability prior;
 they never alter our player forecast mean. Two hundred fifty-six common-seed
 market paths sample roster-aware quantal-response opponent choices. While the
@@ -209,14 +237,14 @@ The market center is `70% ESPN ADP + 30% half-PPR rank midpoint`, with our rank
 retained only as a small tie-breaker. The coefficients and room-style updates
 are visible but remain uncalibrated pending point-in-time draft logs.
 
-The 2024 deterministic stress test covers all 12 snake slots. Mean realized
+The earlier 2024 deterministic stress test covers all 12 snake slots. Mean realized
 starter points for next-turn lookahead versus roster-aware greedy selection are
 `1393.85` versus `1423.91` in balanced rooms, `1506.23` versus `1476.28` in an
 RB run, and `1629.48` versus `1658.15` in a WR run. Lookahead consistently beats
 the fixed format-value list, but it does not dominate the stronger comparator.
 These values are policy diagnostics, not an independent performance estimate.
-The board therefore defaults to roster-aware greedy value and exposes
-next-turn lookahead as a separate selectable policy.
+Those diagnostics are superseded for deployment by the point-in-time ADP
+backtest above. Both model-driven policies remain selectable experiments.
 
 ## Factor screen
 
@@ -247,10 +275,11 @@ cross-fold grouped improvement exceeds the screened subset.
   dependence, head-to-head win probability, and championship objectives remain
   absent. The injury approximation has not yet passed a rolling-origin
   calibration study and should not be interpreted as a medical forecast.
-- The live draft policy consumes a timestamped ESPN ADP snapshot but lacks a
-  historical fitted survival model and a preseason walk-forward draft backtest. The current
-  stress test aggregates weekly forecasts containing in-season information, so
-  recommendation ranks should not be interpreted as a proven optimal policy.
+- The validated baseline uses aggregate MFL ADP rather than raw, timestamped
+  manager-level draft sequences. Opponent behavior is fixed, waiver/trade and
+  playoff outcomes are absent, and one 2024 holdout is too small to establish
+  universal optimality. The result supports market ADP as the current default;
+  it does not prove the market cannot be beaten.
 - The ROS empirical-Bayes weights are declared priors, not yet selected in a
   nested historical rest-of-season backtest. The next research gate is
   rolling-origin error and calibration by position and week of season.
