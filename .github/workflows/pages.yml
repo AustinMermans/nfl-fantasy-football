@@ -56,9 +56,9 @@ jobs:
         if: github.event_name != 'push'
         run: pip install -e .
 
-      - name: Refresh current preseason forecasts
+      - name: Refresh current season forecasts
         if: github.event_name != 'push'
-        run: nfl-fantasy preseason-forecast --season 2026 --refresh
+        run: nfl-fantasy season-forecast --season 2026 --refresh
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5

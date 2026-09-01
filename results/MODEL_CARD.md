@@ -123,6 +123,22 @@ Experienced reserves whose historical workload exceeds their current nonstarter
 role are capped at that same role median. The adjustment audit is written to
 `results/current_role_adjustments.csv`.
 
+### Rest-of-season layer
+
+The production artifact separates the preserved Week-0 draft projection,
+realized points, conditional rest-of-season points, availability-adjusted ROS
+points, and projected final points. A game crosses the cutoff only after its final
+score and corresponding player stats and snaps are published, so a partial or
+delayed week is handled game by game. Weekly features are rebuilt using completed
+current-season evidence and the exact remaining schedule.
+
+Current-form weight increases monotonically with games played using declared
+position-specific empirical-Bayes prior sample sizes. Injury-adjusted expectation
+uses the onset and duration model plus the current game designation. ROS value
+over replacement is recomputed under league size and starting slots. This layer
+has unit coverage for prior updating, remaining-game prorating, and availability,
+but it does not yet have a multi-season ROS calibration report.
+
 This provides current starter/depth information. Current injury designations are
 joined only when the seasonal nflverse report asset exists. If it is absent,
 the published feed flag is false and missing designations mean unknown, not
@@ -236,6 +252,9 @@ cross-fold grouped improvement exceeds the screened subset.
   historical fitted survival model and a preseason walk-forward draft backtest. The current
   stress test aggregates weekly forecasts containing in-season information, so
   recommendation ranks should not be interpreted as a proven optimal policy.
+- The ROS empirical-Bayes weights are declared priors, not yet selected in a
+  nested historical rest-of-season backtest. The next research gate is
+  rolling-origin error and calibration by position and week of season.
 - Historical injury exposure is built from active-roster player-game rows, so
   IR/inactive weeks can be censored before player recurrence is estimated.
   Individual injury-history counts are lower-confidence than position baselines.

@@ -12,6 +12,13 @@ Scoring rules transform component-stat forecasts after prediction. League size
 and roster slots determine replacement levels and draft utility; they do not
 change the raw football forecast.
 
+The draft layer always consumes the preserved Week-0 projection. Daily in-season
+updates are published as a separate rest-of-season view so observed results
+cannot retroactively alter the draft recommendation. ROS value uses only
+unplayed games, expected availability, and the same format-derived replacement
+logic, providing a foundation for waiver and trade comparisons without changing
+the draft-room opponent model.
+
 ## Player distributions
 
 Veterans currently have point forecasts. Rookies with no prior NFL games receive

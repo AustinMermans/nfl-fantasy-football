@@ -11,7 +11,8 @@ from .draft_probability import WEEKLY_OUTCOME_PARAMETERS, estimate_weekly_outcom
 from .draft_strategy import format_draft_metrics
 from .fantasy import DEPLOYMENT_SELECTION, _selected_long
 from .injury import FALLBACK_DURATION, FALLBACK_HAZARD
-from .scoring import load_scoring
+from .rest_of_season import availability_adjusted_projection
+from .scoring import load_scoring, score_components
 
 
 LEAGUE_ROSTER_SLOTS = {"QB": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 2, "K": 1}
@@ -326,9 +327,24 @@ def export_preseason_board(
     season: int,
     data_as_of: str,
     web_dir: Path | None = None,
+    actual_history: pd.DataFrame | None = None,
+    completed_week: int = 0,
 ) -> Path:
-    """Publish a current preseason board without retrospective actual outcomes."""
+    """Publish the draft board plus point-in-time rest-of-season values."""
     destination_dir = web_dir or PROJECT_ROOT / "web"
+    destination = destination_dir / "projections.js"
+    previous_draft_points: dict[str, float] = {}
+    if completed_week and destination.exists():
+        raw = destination.read_text(encoding="utf-8").strip()
+        prefix = "window.NFL_DRAFT_DATA = "
+        if raw.startswith(prefix):
+            previous = json.loads(raw[len(prefix):].removesuffix(";"))
+            previous_draft_points = {
+                str(player["id"]): float(
+                    player.get("draftProjectedPoints", player["projectedPoints"])
+                )
+                for player in previous.get("players", [])
+            }
     players = build_player_rankings(fantasy, components, season=season)
     profile_columns = [
         "injury_weekly_hazard",
@@ -353,6 +369,10 @@ def export_preseason_board(
         "rookie_p90",
         "rookie_cohort_effective_n",
         "current_injury_feed",
+        "preseason_projection",
+        "current_games_played",
+        "future_games",
+        "inseason_component_weight",
         "report_primary_injury",
         "report_status",
         "practice_status",
@@ -365,12 +385,40 @@ def export_preseason_board(
         .set_index("player_id")
         .to_dict("index")
     )
+    actual_frame = (
+        actual_history.copy()
+        if actual_history is not None and not actual_history.empty
+        else pd.DataFrame()
+    )
+    actual_summary: dict[str, dict[str, float]] = {}
+    actual_games: dict[str, pd.DataFrame] = {}
+    if not actual_frame.empty:
+        actual_frame["actual_fantasy_points"] = score_components(actual_frame)
+        summary = actual_frame.groupby("player_id", as_index=False).agg(
+            actual_points=("actual_fantasy_points", "sum"),
+            completed_games=("game_id", "nunique"),
+            games_played=("played", "sum"),
+        )
+        actual_summary = summary.set_index("player_id").to_dict("index")
+        actual_games = {
+            player_id: games.sort_values(["week", "gameday", "game_id"])
+            for player_id, games in actual_frame.groupby("player_id")
+        }
     for player in players:
         role = depth.get(player["id"], {})
         player["depthRank"] = int(_number(role.get("depth_rank"), 0))
         player["depthSlot"] = int(_number(role.get("depth_slot"), 0))
         player["depthRole"] = _text(role.get("pos_name"))
         player["projectionNote"] = _text(role.get("role_adjustment")) or "none"
+        player["draftProjectedPoints"] = round(
+            previous_draft_points.get(player["id"], player["projectedPoints"]), 1
+        )
+        player["inseasonGames"] = int(
+            _number(role.get("current_games_played"), 0)
+        )
+        player["inseasonComponentWeight"] = _number_or(
+            role.get("inseason_component_weight"), 0.0
+        )
         rookie_range = pd.notna(role.get("rookie_p50"))
         player["projectionRange"] = {
             "p10": _number(role.get("rookie_p10")) if rookie_range else player["projectedPoints"],
@@ -410,6 +458,119 @@ def export_preseason_board(
             "weight": _number_or(role.get("weight"), 0.0, 1),
             "bmi": _number_or(role.get("bmi"), 0.0, 1),
         }
+        expected_points, expected_games, expected_missed = availability_adjusted_projection(
+            player["projectedPoints"],
+            remaining_games=player["projectedGames"],
+            weekly_hazard=player["injuryRisk"]["weeklyHazard"],
+            mean_duration=player["injuryRisk"]["meanDuration"],
+            current_status=player["injury"]["gameStatus"],
+        )
+        player["injuryRisk"]["fullSeasonExpectedMissedGames"] = player[
+            "injuryRisk"
+        ]["expectedMissedGames"]
+        player["injuryRisk"]["expectedMissedGames"] = round(expected_missed, 2)
+        player["restOfSeasonPoints"] = player["projectedPoints"]
+        player["restOfSeasonExpectedPoints"] = round(expected_points, 1)
+        player["restOfSeasonExpectedGames"] = round(expected_games, 2)
+        range_scale = expected_points / max(player["draftProjectedPoints"], 1e-9)
+        player["restOfSeasonRange"] = {
+            "p10": round(player["projectionRange"]["p10"] * range_scale, 1),
+            "p50": round(player["projectionRange"]["p50"] * range_scale, 1),
+            "p90": round(player["projectionRange"]["p90"] * range_scale, 1),
+            "source": player["projectionRange"]["source"],
+            "effectiveSample": player["projectionRange"]["effectiveSample"],
+        }
+        actual = actual_summary.get(player["id"], {})
+        player["actualPoints"] = _number(actual.get("actual_points", 0.0))
+        player["completedGames"] = int(_number(actual.get("completed_games", 0)))
+        player["gamesPlayed"] = int(_number(actual.get("games_played", 0)))
+        player["actualPointsPerGame"] = round(
+            player["actualPoints"] / max(player["gamesPlayed"], 1), 2
+        )
+        player["projectedFinish"] = round(
+            player["actualPoints"] + player["restOfSeasonExpectedPoints"], 1
+        )
+        completed_rows = []
+        for game in actual_games.get(player["id"], pd.DataFrame()).itertuples(index=False):
+            completed_rows.append(
+                {
+                    "week": int(game.week),
+                    "gameId": game.game_id,
+                    "team": game.team,
+                    "opponent": game.opponent_team,
+                    "venue": _venue(game.game_id, game.team),
+                    "projectedPoints": 0.0,
+                    "actualPoints": _number(game.actual_fantasy_points, 2),
+                    "baselinePoints": 0.0,
+                    "completed": True,
+                    "stats": {
+                        field: _number(getattr(game, field, 0.0))
+                        for field in POSITION_DISPLAY_FIELDS.get(player["position"], ())
+                    },
+                }
+            )
+        player["games"] = completed_rows + [
+            {**game, "completed": False} for game in player["games"]
+        ]
+
+    ros_frame = pd.DataFrame(
+        [
+            {
+                "player_id": player["id"],
+                "player_name": player["name"],
+                "position": player["position"],
+                "rest_of_season_expected_points": player[
+                    "restOfSeasonExpectedPoints"
+                ],
+            }
+            for player in players
+        ]
+    )
+    replacement, value, ros_rank = format_draft_metrics(
+        ros_frame,
+        "rest_of_season_expected_points",
+        teams=10,
+        roster_slots=LEAGUE_ROSTER_SLOTS,
+    )
+    ros_frame["replacement"] = replacement
+    ros_frame["value"] = value
+    ros_frame["ros_rank"] = ros_rank
+    ros_frame["points_rank"] = ros_frame["rest_of_season_expected_points"].rank(
+        method="first", ascending=False
+    ).astype(int)
+    ros_metrics = ros_frame.set_index("player_id").to_dict("index")
+    finish_rank = {
+        player["id"]: rank
+        for rank, player in enumerate(
+            sorted(players, key=lambda item: (-item["projectedFinish"], item["name"])),
+            start=1,
+        )
+    }
+    actual_rank = {
+        player["id"]: rank
+        for rank, player in enumerate(
+            sorted(players, key=lambda item: (-item["actualPoints"], item["name"])),
+            start=1,
+        )
+    }
+    actual_position_rank: dict[str, int] = {}
+    for position in {player["position"] for player in players}:
+        ordered = sorted(
+            (player for player in players if player["position"] == position),
+            key=lambda item: (-item["actualPoints"], item["name"]),
+        )
+        actual_position_rank.update(
+            {player["id"]: rank for rank, player in enumerate(ordered, start=1)}
+        )
+    for player in players:
+        metric = ros_metrics[player["id"]]
+        player["restOfSeasonRank"] = int(metric["ros_rank"])
+        player["restOfSeasonPointsRank"] = int(metric["points_rank"])
+        player["restOfSeasonReplacementPoints"] = _number(metric["replacement"])
+        player["restOfSeasonValueOverReplacement"] = _number(metric["value"])
+        player["projectedFinishRank"] = int(finish_rank[player["id"]])
+        player["actualRank"] = int(actual_rank[player["id"]])
+        player["actualPositionRank"] = int(actual_position_rank[player["id"]])
     injury_available = bool(future_features["current_injury_feed"].any())
     prediction_path = PROJECT_ROOT / "results" / "fantasy_point_predictions.parquet"
     outcome_parameters = (
@@ -422,11 +583,19 @@ def export_preseason_board(
         "dataAsOf": data_as_of,
         "trainingThrough": season - 1,
         "projectionSeason": season,
-        "forecastType": "preseason",
-        "hasActuals": False,
+        "forecastType": "rest_of_season" if completed_week else "preseason",
+        "hasActuals": bool(actual_summary),
+        "completedWeek": completed_week,
+        "remainingWeeks": sorted(
+            int(week) for week in future_features["week"].unique()
+        ),
         "scoring": "Murphs house half-PPR",
         "scoringWeights": load_scoring(),
-        "scope": f"{season} preseason forecast",
+        "scope": (
+            f"{season} rest-of-season forecast after Week {completed_week}"
+            if completed_week
+            else f"{season} preseason forecast"
+        ),
         "draftFormat": "10-team · 1 QB · 2 RB · 2 WR · 1 TE · 2 FLEX · 1 K · 8 bench",
         "draftMethod": "Weekly managed-lineup value with bench, bye, and outcome uncertainty",
         "draftConfig": {
@@ -459,7 +628,6 @@ def export_preseason_board(
         "players": players,
     }
     destination_dir.mkdir(parents=True, exist_ok=True)
-    destination = destination_dir / "projections.js"
     destination.write_text(
         "window.NFL_DRAFT_DATA = "
         + json.dumps(payload, ensure_ascii=True, separators=(",", ":"))

@@ -50,6 +50,10 @@ main { max-width: 1420px; margin: 0 auto; padding: 28px 24px 52px; }
 h1 { margin: 0; font-size: 38px; line-height: 1.05; letter-spacing: 0; }
 .method-label { margin: 9px 0 0; max-width: 760px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .heading-actions { display: flex; align-items: center; gap: 8px; }
+.view-control button { min-width: 74px; }
+.view-control button:last-child { min-width: 116px; }
+.ros-view .draft-setup .draft-only { display: none; }
+.ros-view .draft-setup { grid-template-columns: 130px 1fr; }
 .button, .icon-button { height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; color: var(--ink); background: #fff; border: 1px solid #cfd6d1; border-radius: 5px; font-weight: 750; }
 .button { padding: 0 14px; }
 .icon-button { width: 40px; padding: 0; }
@@ -230,6 +234,7 @@ footer { max-width: 1420px; margin: 0 auto; padding: 18px 24px 26px; display: fl
   .summary-strip > div:nth-child(2), .summary-strip > div:nth-child(5), .summary-strip > div:nth-child(7) { display: none; }
   .summary-strip strong { font-size: 18px; }
   .segmented-control { display: grid; grid-template-columns: repeat(6, 1fr); }
+  .view-control { width: 100%; grid-template-columns: repeat(2, 1fr); }
   .segmented-control button { min-width: 0; padding-inline: 7px; }
   .toolbar-fields { align-items: stretch; flex-direction: column; }
   .sort-field select { width: 100%; }

@@ -6,11 +6,11 @@
   <meta name="color-scheme" content="light">
   <title>NFL Fantasy Draft Board</title>
   <link rel="preconnect" href="https://a.espncdn.com">
-  <link rel="stylesheet" href="styles.css?v=20260831-slot-10">
+  <link rel="stylesheet" href="styles.css?v=20260901-ros-v1">
   <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
-  <script src="projections.js?v=20260901-model-v2"></script>
+  <script src="projections.js?v=20260901-ros-v1"></script>
   <script src="market.js?v=20260901-market-v1"></script>
-  <script src="app.js?v=20260901-model-v2" defer></script>
+  <script src="app.js?v=20260901-ros-v1" defer></script>
 </head>
 <body>
   <div id="error" class="fatal" hidden></div>
@@ -33,10 +33,14 @@
       <section class="board-heading">
         <div>
           <p class="eyebrow">Live decision board</p>
-          <h1>Draft recommendations</h1>
+          <h1 id="pageHeading">Draft recommendations</h1>
           <p id="methodLabel" class="method-label"></p>
         </div>
         <div class="heading-actions">
+          <div id="forecastView" class="segmented-control view-control" role="group" aria-label="Forecast view">
+            <button class="active" type="button" data-view="draft">Draft</button>
+            <button type="button" data-view="ros">Rest of season</button>
+          </div>
           <button id="undoButton" class="button secondary" type="button" disabled title="Undo last draft action">
             <i data-lucide="undo-2" aria-hidden="true"></i>
             <span>Undo</span>
@@ -58,11 +62,11 @@
             <option value="16">16</option>
           </select>
         </label>
-        <label>
+        <label class="draft-only">
           <span>My draft slot</span>
           <input id="slotInput" type="number" min="1" max="12" step="1" value="1">
         </label>
-        <label>
+        <label class="draft-only">
           <span>Opponent behavior</span>
           <select id="scenarioSelect">
             <option value="adaptive">Follow current room (Bayesian)</option>
@@ -74,7 +78,7 @@
           </select>
           <small id="roomPosteriorLabel"></small>
         </label>
-        <label>
+        <label class="draft-only">
           <span>Recommendation policy</span>
           <select id="policySelect">
             <option value="lookahead">Probability lookahead</option>
@@ -121,11 +125,11 @@
           <small id="bestMeta">-</small>
         </div>
         <div><span id="bestMetricLabel">Projected</span><strong id="bestPoints">-</strong><small id="bestMetricUnit">season points</small></div>
-        <div><span>Current pick</span><strong id="clockPick">-</strong><small id="clockMeta">-</small></div>
-        <div><span>My next turn</span><strong id="nextTurn">-</strong><small id="nextTurnMeta">-</small></div>
-        <div><span>Available</span><strong id="availableCount">-</strong><small>players</small></div>
-        <div><span>My roster</span><strong id="mineCount">0</strong><small>players</small></div>
-        <div><span>Drafted</span><strong id="takenCount">0</strong><small>by others</small></div>
+        <div><span id="clockLabel">Current pick</span><strong id="clockPick">-</strong><small id="clockMeta">-</small></div>
+        <div><span id="nextTurnLabel">My next turn</span><strong id="nextTurn">-</strong><small id="nextTurnMeta">-</small></div>
+        <div><span id="availableLabel">Available</span><strong id="availableCount">-</strong><small>players</small></div>
+        <div><span id="mineLabel">My roster</span><strong id="mineCount">0</strong><small>players</small></div>
+        <div><span id="takenLabel">Drafted</span><strong id="takenCount">0</strong><small>by others</small></div>
       </section>
 
       <section class="toolbar" aria-label="Projection filters">
@@ -147,6 +151,9 @@
             <span class="sr-only">Sort projections</span>
             <select id="sortSelect">
               <option value="draft">Model draft order</option>
+              <option value="ros_value">Rest-of-season value</option>
+              <option value="ros_points">Rest-of-season points</option>
+              <option value="finish">Projected final points</option>
               <option value="market">ESPN average draft position</option>
               <option value="actual_draft">Hindsight format value</option>
               <option value="points">Model season points</option>
@@ -170,11 +177,11 @@
               <th>Player</th>
               <th>Pos</th>
               <th>Team</th>
-              <th class="number-cell">Projection</th>
-              <th class="number-cell actual-column">Actual</th>
+              <th id="projectionHeader" class="number-cell">Projection</th>
+              <th id="actualHeader" class="number-cell actual-column">Actual</th>
               <th class="number-cell">Per game</th>
-              <th class="number-cell" title="Expected managed weekly lineup points added to your roster">Roster gain</th>
-              <th class="number-cell" title="Estimated probability that this player remains available until your next pick">Survival</th>
+              <th id="valueHeader" class="number-cell" title="Expected managed weekly lineup points added to your roster">Roster gain</th>
+              <th id="riskHeader" class="number-cell" title="Estimated probability that this player remains available until your next pick">Survival</th>
               <th>Status</th>
               <th><span class="sr-only">Actions</span></th>
             </tr>

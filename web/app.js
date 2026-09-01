@@ -16,7 +16,7 @@
     receiving_yards: 0.1, receiving_tds: 6, fumbles_lost_total: -2,
   };
   const state = {
-    position: "ALL", query: "", sort: "draft", picks: [], expanded: null,
+    position: "ALL", query: "", sort: "draft", view: "draft", picks: [], expanded: null,
     teams: Number(defaultConfig.teams || 12), draftSlot: Number(defaultConfig.draftSlot || 1), scenario: "adaptive", policy: "lookahead",
     scoring: { ...baseScoring },
   };
@@ -49,12 +49,20 @@
   };
 
   const positionClass = (position) => `position position-${position.toLowerCase()}`;
-  const pointsFor = (player) => {
+  const rescoredProjectionFor = (player) => {
     if (Number.isFinite(player?._points)) return player._points;
     return Number(player?.projectedPoints || 0)
       + (Number(state.scoring.receptions) - Number(baseScoring.receptions || 0)) * Number(player?.stats?.receptions || 0)
       + (Number(state.scoring.passing_tds) - Number(baseScoring.passing_tds || 0)) * Number(player?.stats?.passing_tds || 0)
       + (Number(state.scoring.passing_interceptions) - Number(baseScoring.passing_interceptions || 0)) * Number(player?.stats?.passing_interceptions || 0);
+  };
+  const pointsFor = (player) => {
+    const rescored = rescoredProjectionFor(player);
+    const base = Math.max(Number(player?.projectedPoints || 0), 1e-9);
+    if (state.view === "ros") {
+      return Number(player?.restOfSeasonExpectedPoints ?? rescored) * (rescored / base);
+    }
+    return Number(player?.draftProjectedPoints ?? rescored) * (rescored / base);
   };
   const gamePointsFor = (game) => Number(game?.projectedPoints || 0)
     + (Number(state.scoring.receptions) - Number(baseScoring.receptions || 0)) * Number(game?.stats?.receptions || 0)
@@ -65,6 +73,7 @@
     const receptionName = reception === 1 ? "Full PPR" : reception === 0.5 ? "Half PPR" : "Standard";
     return `${receptionName} · ${state.scoring.passing_tds}-pt pass TD`;
   };
+  const isValidationView = () => !["preseason", "rest_of_season"].includes(data.forecastType);
   const teamLogo = (team) => {
     const aliases = { JAX: "jax", LA: "lar", WAS: "wsh" };
     return `https://a.espncdn.com/i/teamlogos/nfl/500/${aliases[team] || team.toLowerCase()}.png`;
@@ -160,9 +169,13 @@
   }
 
   function scaledRange(player) {
-    const range = player.projectionRange || {};
+    const range = (state.view === "ros" ? player.restOfSeasonRange : player.projectionRange) || {};
     const current = pointsFor(player);
-    const base = Number(player.projectedPoints || 0);
+    const base = Number(
+      state.view === "ros"
+        ? player.restOfSeasonExpectedPoints || player.projectedPoints || 0
+        : player.draftProjectedPoints || player.projectedPoints || 0,
+    );
     const scale = base > 0 ? current / base : 1;
     return {
       p10: Number(range.p10 ?? base) * scale,
@@ -223,7 +236,7 @@
     const parameters = data.benchModel?.parametersByPosition || {};
     const outcomes = new Map();
     data.players.forEach((player) => {
-      const games = new Map(player.games.map((game) => [Number(game.week), game]));
+      const games = new Map(player.games.filter((game) => !game.completed).map((game) => [Number(game.week), game]));
       const injuryRisk = player.injuryRisk || {};
       const weeklyHazard = Math.min(0.08, Math.max(0.005, Number(injuryRisk.weeklyHazard || 0.025)));
       const meanDuration = Math.min(6, Math.max(1, Number(injuryRisk.meanDuration || 2)));
@@ -443,7 +456,7 @@
   }
 
   function recommendationState() {
-    const cacheKey = JSON.stringify({ picks: state.picks, teams: state.teams, draftSlot: state.draftSlot, scenario: state.scenario, policy: state.policy, scoring: state.scoring });
+    const cacheKey = JSON.stringify({ picks: state.picks, teams: state.teams, draftSlot: state.draftSlot, scenario: state.scenario, policy: state.policy, scoring: state.scoring, view: state.view });
     if (recommendationCache.key === cacheKey) return recommendationCache.value;
     const available = data.players.filter((player) => statusFor(player.id) === "available");
     const myRoster = data.players.filter((player) => statusFor(player.id) === "mine");
@@ -613,6 +626,9 @@
     });
     const sorters = {
       draft: (a, b) => (recommendations.byId.get(a.id)?.rank || 9999) - (recommendations.byId.get(b.id)?.rank || 9999) || recommendations.metrics.get(a.id).rank - recommendations.metrics.get(b.id).rank,
+      ros_value: (a, b) => Number(a.restOfSeasonRank || 9999) - Number(b.restOfSeasonRank || 9999),
+      ros_points: (a, b) => Number(b.restOfSeasonExpectedPoints || 0) - Number(a.restOfSeasonExpectedPoints || 0),
+      finish: (a, b) => Number(b.projectedFinish || 0) - Number(a.projectedFinish || 0),
       market: (a, b) => marketRankFor(a, recommendations.metrics) - marketRankFor(b, recommendations.metrics),
       actual_draft: (a, b) => actualMetrics.get(a.id).rank - actualMetrics.get(b.id).rank,
       points: (a, b) => pointsFor(b) - pointsFor(a) || a.rank - b.rank,
@@ -665,16 +681,16 @@
       <tr>
         <td><strong>${game.week}</strong></td>
         <td><span class="matchup-venue">${game.venue}</span> ${escapeHtml(game.opponent)}</td>
-        <td class="number-cell weekly-projection">${gamePointsFor(game).toFixed(2)}</td>
-        <td class="number-cell actual-result actual-column">${data.hasActuals ? game.actualPoints.toFixed(2) : "-"}</td>
+        <td class="number-cell weekly-projection">${game.completed ? "-" : gamePointsFor(game).toFixed(2)}</td>
+        <td class="number-cell actual-result actual-column">${game.completed ? Number(game.actualPoints).toFixed(2) : "-"}</td>
         ${columns.map(([, key]) => `<td class="number-cell">${gameStat(game, key).toFixed(1)}</td>`).join("")}
       </tr>
     `).join("");
     return `
       <div class="weekly-wrap">
         <div class="detail-heading">
-          <div><strong>Game-by-game projections</strong><span>${data.forecastType === "preseason" ? `${data.projectionSeason} current preseason forecast` : `${data.projectionSeason} out-of-sample validation`}</span></div>
-          <small>${data.hasActuals ? `Actual reflects the completed ${data.projectionSeason} validation result` : "Actual points populate after games are completed"}</small>
+          <div><strong>Game-by-game projections</strong><span>${data.forecastType === "preseason" ? `${data.projectionSeason} preseason forecast` : `${data.projectionSeason} through Week ${data.completedWeek}`}</span></div>
+          <small>${data.hasActuals ? "Completed games are fixed; future games update daily" : "Actual points populate after games are completed"}</small>
         </div>
         <div class="weekly-scroll">
           <table class="weekly-table">
@@ -708,16 +724,24 @@
     const expertPoints = market?.espnHalfPprPoints == null ? NaN : Number(market.espnHalfPprPoints);
     const expertMarkup = Number.isFinite(expertPoints) ? `
       <div class="forecast-range">
-        <div><span>Our half-PPR</span><strong>${Number(player.projectedPoints).toFixed(1)}</strong></div>
+        <div><span>Week-0 draft projection</span><strong>${Number(player.draftProjectedPoints ?? player.projectedPoints).toFixed(1)}</strong></div>
         <div><span>ESPN half-PPR est.</span><strong>${expertPoints.toFixed(1)}</strong></div>
-        <div><span>Model difference</span><strong>${(Number(player.projectedPoints) - expertPoints >= 0 ? "+" : "")}${(Number(player.projectedPoints) - expertPoints).toFixed(1)}</strong></div>
+        <div><span>Draft difference</span><strong>${(Number(player.draftProjectedPoints ?? player.projectedPoints) - expertPoints >= 0 ? "+" : "")}${(Number(player.draftProjectedPoints ?? player.projectedPoints) - expertPoints).toFixed(1)}</strong></div>
         <div><span>ESPN ADP</span><strong>${market.adp == null ? "-" : Number(market.adp).toFixed(1)}</strong></div>
       </div>` : "";
+    const rosMarkup = `
+      <div class="forecast-range">
+        <div><span>Actual to date</span><strong>${Number(player.actualPoints || 0).toFixed(1)}</strong></div>
+        <div><span>ROS before availability</span><strong>${Number(player.restOfSeasonPoints ?? player.projectedPoints).toFixed(1)}</strong></div>
+        <div><span>ROS expected</span><strong>${Number(player.restOfSeasonExpectedPoints ?? player.projectedPoints).toFixed(1)}</strong></div>
+        <div><span>Projected finish</span><strong>${Number(player.projectedFinish ?? player.projectedPoints).toFixed(1)}</strong></div>
+      </div>`;
     return `
       <div class="player-detail">
         <div class="season-components">
-          <span class="detail-label">Projected season components</span>
+          <span class="detail-label">${state.view === "ros" ? "Projected remaining components" : "Projected season components"}</span>
           <div class="stat-grid">${statItems(player)}</div>
+          ${rosMarkup}
           ${expertMarkup}
           ${rangeMarkup}
           ${injuryRiskMarkup}
@@ -739,43 +763,65 @@
     const expanded = state.expanded === player.id;
     const rowClass = status === "available" ? "" : ` ${status}`;
     const recommendation = recommendations.byId.get(player.id);
-    const liveRank = recommendation?.rank || recommendations.metrics.get(player.id).rank;
+    const isRos = state.view === "ros";
+    const liveRank = isRos
+      ? Number(player.restOfSeasonRank || 9999)
+      : recommendation?.rank || recommendations.metrics.get(player.id).rank;
     const hindsight = actualMetrics?.get(player.id);
     const market = marketFor(player);
     const displayedDraftValue = state.sort === "actual_draft" && hindsight ? hindsight.value : recommendation?.survivalProbability;
     const projectedPoints = pointsFor(player);
+    const pointsRank = isRos
+      ? Number(player.restOfSeasonPointsRank || 9999)
+      : recommendations.pointRanks.get(player.id);
     const range = scaledRange(player);
     const rookieMeta = range.source === "historical rookie analogs" ? ` · rookie P10–P90 ${range.p10.toFixed(0)}–${range.p90.toFixed(0)}` : "";
     const injuryMeta = player.injury?.gameStatus ? ` · ${escapeHtml(player.injury.gameStatus)}` : "";
-    const marketMeta = !data.hasActuals && market?.adp ? ` · ESPN ADP ${Number(market.adp).toFixed(1)}` : "";
+    const marketMeta = !isRos && market?.adp ? ` · ESPN ADP ${Number(market.adp).toFixed(1)}` : "";
+    const gamesMeta = isRos
+      ? `${player.projectedGames} games remaining`
+      : `${player.projectedGames} projected games`;
+    const secondaryRank = isRos
+      ? `${Number(player.restOfSeasonValueOverReplacement || 0) >= 0 ? "+" : ""}${Number(player.restOfSeasonValueOverReplacement || 0).toFixed(0)}`
+      : isValidationView() ? hindsight?.rank || "-" : market?.adp?.toFixed(1) || "-";
+    const secondaryRankLabel = isRos ? "VOR" : isValidationView() ? "Hindsight" : "ESPN ADP";
+    const perGameDenominator = isRos
+      ? Math.max(Number(player.restOfSeasonExpectedGames || 0), 1)
+      : Math.max(Number(player.projectedGames || 0), 1);
+    const displayedGain = isRos
+      ? Number(player.restOfSeasonValueOverReplacement || 0)
+      : recommendation?.immediateGain;
+    const displayedRisk = isRos
+      ? `${Number(player.restOfSeasonExpectedGames || 0).toFixed(1)}`
+      : recommendation ? `${Math.round(displayedDraftValue * 100)}%` : "-";
     const actionsDisabled = status !== "available" || recommendations.draftComplete;
     return `
       <tr class="player-row${rowClass}" data-id="${escapeHtml(player.id)}">
         <td class="rank-cell">
           <div class="rank-pair">
-            <span><strong>${liveRank}</strong><small>Live</small></span>
-            <span class="actual-rank"><strong>${data.hasActuals ? hindsight?.rank || "-" : market?.adp?.toFixed(1) || "-"}</strong><small>${data.hasActuals ? "Hindsight" : "ESPN ADP"}</small></span>
+            <span><strong>${liveRank}</strong><small>${isRos ? "ROS" : "Live"}</small></span>
+            <span class="actual-rank"><strong>${secondaryRank}</strong><small>${secondaryRankLabel}</small></span>
           </div>
         </td>
         <td class="rank-cell">
           <div class="rank-pair points-rank-pair">
-            <span><strong>${recommendations.pointRanks.get(player.id)}</strong><small>Model</small></span>
-            <span class="actual-rank actual-points-rank"><strong>${data.hasActuals ? player.actualRank : "-"}</strong><small>Actual</small></span>
+            <span><strong>${pointsRank}</strong><small>${isRos ? "ROS pts" : "Model"}</small></span>
+            <span class="actual-rank actual-points-rank"><strong>${isRos ? player.projectedFinishRank : isValidationView() ? player.actualRank : "-"}</strong><small>${isRos ? "Finish" : "Actual"}</small></span>
           </div>
         </td>
         <td>
           <div class="player-cell">
             <img src="${teamLogo(player.team)}" alt="" onerror="this.hidden=true">
-            <span><strong>${escapeHtml(player.name)}</strong><small>${player.projectedGames} projected games${player.depthRank ? ` · depth ${player.position}${player.depthRank}` : ""}${marketMeta}${rookieMeta}${injuryMeta}</small></span>
+            <span><strong>${escapeHtml(player.name)}</strong><small>${gamesMeta}${player.depthRank ? ` · depth ${player.position}${player.depthRank}` : ""}${marketMeta}${rookieMeta}${injuryMeta}</small></span>
           </div>
         </td>
         <td><span class="${positionClass(player.position)}">${escapeHtml(player.position)}</span></td>
         <td class="team-cell">${escapeHtml(player.team)}</td>
         <td class="number-cell projection"><strong>${projectedPoints.toFixed(1)}</strong></td>
-        <td class="number-cell actual-total actual-column">${data.hasActuals ? player.actualPoints.toFixed(1) : "-"}</td>
-        <td class="number-cell">${(projectedPoints / player.projectedGames).toFixed(2)}</td>
-        <td class="number-cell draft-value" title="Expected managed weekly lineup points added to your current roster">${recommendation ? `${recommendation.immediateGain >= 0 ? "+" : ""}${recommendation.immediateGain.toFixed(1)}` : "-"}</td>
-        <td class="number-cell draft-value" title="${state.sort === "actual_draft" ? "Hindsight value over the format-derived replacement player" : `Estimated probability of remaining available to pick #${recommendations.onClock ? recommendations.nextTurn : recommendations.decisionPick}`}">${state.sort === "actual_draft" ? `${displayedDraftValue > 0 ? "+" : ""}${displayedDraftValue.toFixed(1)}` : recommendation ? `${Math.round(displayedDraftValue * 100)}%` : "-"}</td>
+        <td class="number-cell actual-total actual-column">${Number(player.actualPoints || 0).toFixed(1)}</td>
+        <td class="number-cell">${(projectedPoints / perGameDenominator).toFixed(2)}</td>
+        <td class="number-cell draft-value" title="${isRos ? "Expected rest-of-season points over the format-derived replacement player" : "Expected managed weekly lineup points added to your current roster"}">${displayedGain == null ? "-" : `${displayedGain >= 0 ? "+" : ""}${displayedGain.toFixed(1)}`}</td>
+        <td class="number-cell draft-value" title="${isRos ? "Expected games available for the rest of the season" : `Estimated probability of remaining available to pick #${recommendations.onClock ? recommendations.nextTurn : recommendations.decisionPick}`}">${displayedRisk}</td>
         <td>${statusMarkup(player, status)}</td>
         <td class="actions-cell">
           <div class="row-actions">
@@ -815,6 +861,39 @@
   }
 
   function renderSummary(recommendations) {
+    if (state.view === "ros") {
+      const best = [...data.players].sort(
+        (a, b) => Number(a.restOfSeasonRank || 9999) - Number(b.restOfSeasonRank || 9999),
+      )[0];
+      $("bestHeading").textContent = "Rest-of-season leader";
+      $("bestName").textContent = best?.name || "No player available";
+      $("bestMeta").textContent = best
+        ? `${best.position} · ${best.team} · ${Number(best.restOfSeasonValueOverReplacement || 0) >= 0 ? "+" : ""}${Number(best.restOfSeasonValueOverReplacement || 0).toFixed(1)} over replacement`
+        : "-";
+      $("bestMetricLabel").textContent = "ROS expected";
+      $("bestPoints").textContent = best ? Number(best.restOfSeasonExpectedPoints || 0).toFixed(1) : "-";
+      $("bestMetricUnit").textContent = "availability-adjusted points";
+      $("clockLabel").textContent = "Completed through";
+      $("clockPick").textContent = data.completedWeek ? `Week ${data.completedWeek}` : "Preseason";
+      $("clockMeta").textContent = `${data.projectionSeason} actual points are fixed`;
+      $("nextTurnLabel").textContent = "Schedule left";
+      $("nextTurn").textContent = `${(data.remainingWeeks || []).length} weeks`;
+      $("nextTurnMeta").textContent = data.remainingWeeks?.length ? `Next projected: Week ${data.remainingWeeks[0]}` : "Regular season complete";
+      $("availableLabel").textContent = "Available";
+      $("mineLabel").textContent = "My roster";
+      $("takenLabel").textContent = "Other rosters";
+      $("availableCount").textContent = data.players.filter((player) => statusFor(player.id) === "available").length;
+      $("mineCount").textContent = data.players.filter((player) => statusFor(player.id) === "mine").length;
+      $("takenCount").textContent = data.players.filter((player) => statusFor(player.id) === "other").length;
+      $("rosterNeeds").innerHTML = rosterNeeds();
+      $("undoButton").disabled = state.picks.length === 0;
+      return;
+    }
+    $("clockLabel").textContent = "Current pick";
+    $("nextTurnLabel").textContent = "My next turn";
+    $("availableLabel").textContent = "Available";
+    $("mineLabel").textContent = "My roster";
+    $("takenLabel").textContent = "Drafted";
     const best = recommendations.candidates[0]?.player;
     const bestRecommendation = best ? recommendations.byId.get(best.id) : null;
     $("bestHeading").textContent = recommendations.draftComplete ? "Draft complete" : recommendations.onClock ? "Pick now" : `Target for pick #${recommendations.decisionPick}`;
@@ -846,8 +925,17 @@
   }
 
   function render() {
+    const isRos = state.view === "ros";
+    document.body.classList.toggle("ros-view", isRos);
+    $("pageHeading").textContent = isRos ? "Rest-of-season values" : "Draft recommendations";
+    $("draftRankSub").textContent = isRos ? "Expected value · VOR" : isValidationView() ? "Live · Hindsight" : "Live · ESPN ADP";
+    $("pointsRankSub").textContent = isRos ? "ROS points · projected finish" : isValidationView() ? "Model · Actual" : "Model";
+    $("projectionHeader").textContent = isRos ? "ROS expected" : "Projection";
+    $("actualHeader").textContent = isRos ? "To date" : "Actual";
+    $("valueHeader").textContent = isRos ? "ROS VOR" : "Roster gain";
+    $("riskHeader").textContent = isRos ? "Exp. games" : "Survival";
     const recommendations = recommendationState();
-    const actualMetrics = data.hasActuals ? formatMetrics((player) => player.actualPoints) : null;
+    const actualMetrics = isValidationView() ? formatMetrics((player) => player.actualPoints) : null;
     const players = filteredPlayers(recommendations, actualMetrics);
     $("rankingsBody").innerHTML = players.map((player) => playerRow(player, recommendations, actualMetrics)).join("");
     $("emptyState").hidden = players.length > 0;
@@ -856,6 +944,15 @@
   }
 
   function bindEvents() {
+    $("forecastView").addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-view]");
+      if (!button || button.dataset.view === state.view) return;
+      state.view = button.dataset.view;
+      state.sort = state.view === "ros" ? "ros_value" : "draft";
+      $("sortSelect").value = state.sort;
+      document.querySelectorAll("[data-view]").forEach((item) => item.classList.toggle("active", item === button));
+      render();
+    });
     $("positionFilters").addEventListener("click", (event) => {
       const button = event.target.closest("button[data-position]");
       if (!button) return;
@@ -952,11 +1049,12 @@
     $("receptionSelect").value = String(state.scoring.receptions);
     $("passingTdSelect").value = String(state.scoring.passing_tds);
     $("interceptionSelect").value = String(state.scoring.passing_interceptions);
-    $("seasonLabel").textContent = data.forecastType === "preseason" ? `${data.projectionSeason} preseason` : `${data.projectionSeason} validation season`;
-    $("modelStatus").textContent = `${scoringName()} · ${data.forecastType === "preseason" ? "current forecast" : "development model"}`;
-    $("methodLabel").textContent = data.forecastType === "preseason"
-      ? `${data.scope}. Models refit through ${data.trainingThrough}; active rosters, starter depth, schedule, and game lines as of ${new Date(data.dataAsOf).toLocaleString()}. Player value comes from our forecasts; ESPN ADP is used only for opponent availability. Recommendations simulate managed weekly lineups, injury paths, eight bench slots, opponent choices, and your next snake turn.`
-      : `${data.scope}. Recommendations combine game-level forecasts, format-derived replacement value, your roster, and the projected pool at your next snake turn; this remains a ${data.projectionSeason} out-of-sample validation board, not a live ${new Date().getFullYear()} preseason ranking.`;
+    const liveForecast = ["preseason", "rest_of_season"].includes(data.forecastType);
+    $("seasonLabel").textContent = data.forecastType === "preseason" ? `${data.projectionSeason} preseason` : data.forecastType === "rest_of_season" ? `${data.projectionSeason} Week ${data.completedWeek}` : `${data.projectionSeason} validation season`;
+    $("modelStatus").textContent = `${scoringName()} · ${liveForecast ? "current forecast" : "development model"}`;
+    $("methodLabel").textContent = liveForecast
+      ? `${data.scope}. The draft view preserves the Week-0 projection and models ESPN-informed room availability. Rest-of-season value fixes completed results, updates future matchups and roles from current evidence, and discounts expected points for availability risk.`
+      : `${data.scope}. Recommendations combine game-level forecasts, format-derived replacement value, your roster, and the projected pool at your next snake turn; this remains a ${data.projectionSeason} out-of-sample validation board.`;
     $("footerScope").textContent = `${data.projectionSeason} · ${scoringName()} · ${data.players.length} fantasy-relevant players`;
     $("injuryStatus").textContent = data.injuryReportsAvailable
       ? `Current injury report: ${data.injurySource}`
@@ -965,9 +1063,12 @@
     $("updatedLabel").textContent = `Generated ${generated.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
     if (!data.hasActuals) {
       document.body.classList.add("no-actuals");
-      $("draftRankSub").textContent = "Live · ESPN ADP";
-      $("pointsRankSub").textContent = "Model";
       $("sortSelect").querySelectorAll('option[value="actual"], option[value="actual_draft"]').forEach((option) => { option.hidden = true; option.disabled = true; });
+    }
+    if (liveForecast) {
+      const hindsight = $("sortSelect").querySelector('option[value="actual_draft"]');
+      hindsight.hidden = true;
+      hindsight.disabled = true;
     }
     bindEvents();
     render();

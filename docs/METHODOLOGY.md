@@ -121,6 +121,25 @@ contains a longer anytime-touchdown catalog but only one recognized 2024
 passing-yard contract. These sources therefore cannot yet be used to tune the
 official model without violating the holdout design.
 
+## Rest-of-season updating
+
+The daily `season-forecast` command detects completed games from published final
+scores and requires corresponding player-stat and snap rows. It loads current-
+season evidence only for those game IDs, then rebuilds every unplayed matchup using all information available before that
+kickoff. Filtering by game ID supports partially completed NFL weeks and prevents
+both double counting and treating an upcoming game as a zero.
+
+The frozen Week-0 mean is prorated to the exact games remaining. The current
+weekly component forecast receives weight
+
+`w = w0 + (1 - w0) * games_played / (games_played + k_position)`.
+
+`w0` is the validated preseason component weight and `k_position` is 5 games for
+QB, 8 for RB/WR, and 10 for TE/K. Rookie `w0` is zero. Expected ROS points then
+multiply the conditional forecast by expected availability from injury onset,
+episode duration, and current game designation. ROS value over replacement uses
+the same league-size and lineup-derived starter demand as the draft model.
+
 ## Draft recommendation
 
 The draft layer does not train new player outcomes or alter the component

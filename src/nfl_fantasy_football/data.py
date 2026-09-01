@@ -91,6 +91,19 @@ def _load_many(pattern: str, seasons: list[int]) -> pd.DataFrame:
     return pd.concat((pd.read_parquet(path) for path in paths), ignore_index=True)
 
 
+def _load_optional_many(
+    pattern: str,
+    seasons: list[int],
+    *,
+    columns: list[str],
+) -> pd.DataFrame:
+    paths = [RAW_DIR / pattern.format(season=season) for season in seasons]
+    existing = [path for path in paths if path.exists()]
+    if not existing:
+        return pd.DataFrame(columns=columns)
+    return pd.concat((pd.read_parquet(path) for path in existing), ignore_index=True)
+
+
 def load_player_games(
     seasons: list[int],
     *,
@@ -100,7 +113,14 @@ def load_player_games(
     stats = _load_many("stats_player_week_{season}.parquet", seasons)
     snaps = _load_many("snap_counts_{season}.parquet", seasons)
     rosters = _load_many("roster_weekly_{season}.parquet", seasons)
-    injuries = _load_many("injuries_{season}.parquet", seasons)
+    injury_columns = [
+        "game_type", "season", "week", "team", "gsis_id",
+        "report_primary_injury", "report_secondary_injury", "report_status",
+        "practice_primary_injury", "practice_secondary_injury", "practice_status",
+    ]
+    injuries = _load_optional_many(
+        "injuries_{season}.parquet", seasons, columns=injury_columns
+    )
     schedules = pd.read_csv(RAW_DIR / "games.csv", low_memory=False)
 
     stats = stats[

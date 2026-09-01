@@ -14,12 +14,21 @@ from .fantasy import DEPLOYMENT_SELECTION, KEYS, _selected_long
 from .features import build_features, feature_sets
 from .injury import estimate_injury_risk_profiles
 from .model import RecentMeanRegressor, build_estimator
-from .preseason import COMPONENT_WEIGHT_BY_POSITION, fit_preseason_means
+from .preseason import fit_preseason_means
+from .rest_of_season import blend_remaining_projection
 from .rookies import rookie_prior_table
 from .scoring import score_components, scoring_fields
 
 
 CURRENT_INPUT_URLS = {
+    "stats": (
+        "https://github.com/nflverse/nflverse-data/releases/download/stats_player/"
+        "stats_player_week_{season}.parquet"
+    ),
+    "snaps": (
+        "https://github.com/nflverse/nflverse-data/releases/download/snap_counts/"
+        "snap_counts_{season}.parquet"
+    ),
     "roster": (
         "https://github.com/nflverse/nflverse-data/releases/download/weekly_rosters/"
         "roster_weekly_{season}.parquet"
@@ -48,6 +57,8 @@ def refresh_production_inputs(
     download_nflverse(list(range(first_season, season)), refresh=False)
     for name, template in CURRENT_INPUT_URLS.items():
         destination_name = {
+            "stats": f"stats_player_week_{season}.parquet",
+            "snaps": f"snap_counts_{season}.parquet",
             "roster": f"roster_weekly_{season}.parquet",
             "depth": f"depth_charts_{season}.parquet",
             "injury": f"injuries_{season}.parquet",
@@ -57,7 +68,7 @@ def refresh_production_inputs(
             try:
                 _download(template.format(season=season), destination)
             except HTTPError as error:
-                if name != "injury" or error.code != 404:
+                if name not in {"stats", "snaps", "injury"} or error.code != 404:
                     raise
                 destination.unlink(missing_ok=True)
     if refresh_current:
@@ -224,6 +235,40 @@ def current_preseason_games(season: int) -> tuple[pd.DataFrame, str]:
     return future.sort_values(["week", "game_id", "player_id"]), as_of
 
 
+def completed_regular_games(season: int) -> pd.DataFrame:
+    """Return games with published final scores, including partial NFL weeks."""
+    schedules = pd.read_csv(RAW_DIR / "games.csv", low_memory=False)
+    completed = schedules[
+        schedules["season"].eq(season)
+        & schedules["game_type"].eq("REG")
+        & schedules["home_score"].notna()
+        & schedules["away_score"].notna()
+    ][["game_id", "week", "gameday"]].copy()
+    return completed.sort_values(["week", "gameday", "game_id"])
+
+
+def current_season_history(season: int, completed: pd.DataFrame) -> pd.DataFrame:
+    required = (
+        RAW_DIR / f"stats_player_week_{season}.parquet",
+        RAW_DIR / f"snap_counts_{season}.parquet",
+        RAW_DIR / f"roster_weekly_{season}.parquet",
+    )
+    if completed.empty or not all(path.exists() for path in required):
+        return pd.DataFrame()
+    current = load_player_games([season])
+    return current[current["game_id"].isin(set(completed["game_id"]))].copy()
+
+
+def observed_completed_games(
+    score_complete: pd.DataFrame, current_history: pd.DataFrame
+) -> pd.DataFrame:
+    """Keep final games only after their player stats and snaps are available."""
+    if current_history.empty or "game_id" not in current_history:
+        return score_complete.iloc[0:0].copy()
+    observed_game_ids = set(current_history["game_id"].dropna().unique())
+    return score_complete[score_complete["game_id"].isin(observed_game_ids)].copy()
+
+
 def preseason_feature_snapshots(
     history: pd.DataFrame, future: pd.DataFrame
 ) -> pd.DataFrame:
@@ -317,7 +362,10 @@ def apply_current_role_adjustments(
     preliminary = fantasy_forecasts(components, future_features)
     totals = preliminary.groupby(
         ["player_id", "player_name", "position", "team"], as_index=False
-    )["predicted_fantasy_points"].sum()
+    ).agg(
+        predicted_fantasy_points=("predicted_fantasy_points", "sum"),
+        future_games=("game_id", "nunique"),
+    )
     roles = (
         future_features.sort_values(["player_id", "week"])
         .groupby("player_id", as_index=False)
@@ -337,9 +385,25 @@ def apply_current_role_adjustments(
     roles["is_rookie"] = roles["draft_year"].eq(roles["season"]) | roles[
         "years_exp"
     ].eq(0)
-    rookie_priors = rookie_prior_table(history, totals, roles)
+    season = int(roles["season"].iloc[0])
+    current_played = (
+        history[
+            history["season"].eq(season)
+            & history["played"].fillna(0).gt(0)
+        ]
+        .groupby("player_id")["game_id"]
+        .nunique()
+    )
+    roles["current_games_played"] = roles["player_id"].map(current_played).fillna(0.0)
+    full_season_equivalent = totals.copy()
+    full_season_equivalent["predicted_fantasy_points"] *= (
+        17.0 / full_season_equivalent["future_games"].clip(lower=1)
+    )
+    rookie_priors = rookie_prior_table(
+        history[history["season"].lt(season)], full_season_equivalent, roles
+    )
     preseason_means = fit_preseason_means(
-        history, future_features, season=int(roles["season"].iloc[0])
+        history, future_features, season=season
     )
     totals = totals.merge(roles, on="player_id", validate="one_to_one")
     experienced = totals[totals["player_games_prior"].gt(0)]
@@ -367,27 +431,35 @@ def apply_current_role_adjustments(
         adjustments["role_prior_points"]
     )
     adjustments["adjusted_points"] = adjustments["predicted_fantasy_points"]
-    veteran_shrinkage = ~rookie & adjustments["preseason_mean"].notna()
-    component_weight = adjustments["position"].map(
-        COMPONENT_WEIGHT_BY_POSITION
-    ).fillna(0.25)
-    adjustments.loc[veteran_shrinkage, "adjusted_points"] = (
-        component_weight.loc[veteran_shrinkage]
-        * adjustments.loc[veteran_shrinkage, "predicted_fantasy_points"]
-        + (1.0 - component_weight.loc[veteran_shrinkage])
-        * adjustments.loc[veteran_shrinkage, "preseason_mean"]
-    )
-    adjustments.loc[rookie, "adjusted_points"] = adjustments.loc[
+    adjustments["preseason_projection"] = adjustments["preseason_mean"]
+    adjustments.loc[rookie, "preseason_projection"] = adjustments.loc[
         rookie, "rookie_prior_mean"
     ].fillna(adjustments.loc[rookie, "role_prior_points"])
+    shrinkage = adjustments["preseason_projection"].notna()
+    blended = adjustments.loc[shrinkage].apply(
+        lambda row: blend_remaining_projection(
+            row["preseason_projection"],
+            row["predicted_fantasy_points"],
+            remaining_games=int(row["future_games"]),
+            games_played=float(row["current_games_played"]),
+            position=str(row["position"]),
+            rookie=bool(row["is_rookie"]),
+        ),
+        axis=1,
+    )
+    adjustments.loc[shrinkage, "adjusted_points"] = blended.map(lambda value: value[0])
+    adjustments["inseason_component_weight"] = 1.0
+    adjustments.loc[shrinkage, "inseason_component_weight"] = blended.map(
+        lambda value: value[1]
+    )
     adjustments.loc[~rookie & reserve & above_role, "adjusted_points"] = adjustments.loc[
         ~rookie & reserve & above_role, "role_prior_points"
     ]
     adjustments["adjustment_reason"] = "none"
-    adjustments.loc[veteran_shrinkage, "adjustment_reason"] = (
-        "preseason season-total shrinkage"
+    adjustments.loc[shrinkage & ~rookie, "adjustment_reason"] = (
+        "preseason/in-season empirical-Bayes blend"
     )
-    adjustments.loc[rookie, "adjustment_reason"] = "empirical rookie prior"
+    adjustments.loc[rookie, "adjustment_reason"] = "rookie prior/in-season blend"
     adjustments.loc[~rookie & reserve & above_role, "adjustment_reason"] = (
         "reserve-role cap"
     )
@@ -400,7 +472,7 @@ def apply_current_role_adjustments(
     adjusted["predicted"] = adjusted["predicted"] * adjusted["player_id"].map(
         scale
     ).fillna(1.0)
-    audit = adjustments[adjustments["adjustment_reason"].ne("none")][
+    audit = adjustments[
         [
             "player_id",
             "player_name",
@@ -411,6 +483,10 @@ def apply_current_role_adjustments(
             "role_prior_points",
             "adjusted_points",
             "preseason_mean",
+            "preseason_projection",
+            "future_games",
+            "current_games_played",
+            "inseason_component_weight",
             "role_scale",
             "adjustment_reason",
             "rookie_p10",
@@ -429,10 +505,31 @@ def build_preseason_forecasts(
     *,
     refresh: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, str]:
+    fantasy, components, features, as_of, _, _ = build_season_forecasts(
+        season, refresh=refresh
+    )
+    return fantasy, components, features, as_of
+
+
+def build_season_forecasts(
+    season: int,
+    *,
+    refresh: bool = False,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, str, pd.DataFrame, int]:
     if refresh:
         refresh_production_inputs(season)
-    history = load_player_games(list(range(2012, season)))
+    prior_history = load_player_games(list(range(2012, season)))
+    score_complete = completed_regular_games(season)
+    current_history = current_season_history(season, score_complete)
+    completed = observed_completed_games(score_complete, current_history)
+    history = pd.concat(
+        [prior_history, current_history], ignore_index=True, sort=False
+    ) if not current_history.empty else prior_history
     future, as_of = current_preseason_games(season)
+    if not completed.empty:
+        future = future[~future["game_id"].isin(set(completed["game_id"]))].copy()
+    if future.empty:
+        raise ValueError(f"no unplayed regular-season games remain for {season}")
     history_features = build_features(history)
     future_features = preseason_feature_snapshots(history, future)
     injury_profiles = estimate_injury_risk_profiles(history, future)
@@ -460,11 +557,20 @@ def build_preseason_forecasts(
     ):
         values = role_audit.set_index("player_id")[column]
         future_features[column] = future_features["player_id"].map(values)
+    for column in (
+        "preseason_projection",
+        "current_games_played",
+        "future_games",
+        "inseason_component_weight",
+    ):
+        values = role_audit.set_index("player_id")[column]
+        future_features[column] = future_features["player_id"].map(values)
     fantasy = fantasy_forecasts(components, future_features)
     role_audit.to_csv(
         PROJECT_ROOT / "results" / "current_role_adjustments.csv", index=False
     )
-    return fantasy, components, future_features, as_of
+    completed_week = int(completed["week"].max()) if not completed.empty else 0
+    return fantasy, components, future_features, as_of, current_history, completed_week
 
 
 def write_production_artifacts(

@@ -29,7 +29,7 @@ from .market import (
     polymarket_player_market_catalog,
 )
 from .participation import summarize_participation, walk_forward_participation
-from .production import build_preseason_forecasts, write_production_artifacts
+from .production import build_season_forecasts, write_production_artifacts
 from .preseason import walk_forward_preseason_backtest
 
 
@@ -289,7 +289,7 @@ def _draft_policy_stress_test(args: argparse.Namespace) -> None:
 
 
 def _preseason_forecast(args: argparse.Namespace) -> None:
-    fantasy, components, features, as_of = build_preseason_forecasts(
+    fantasy, components, features, as_of, actual_history, completed_week = build_season_forecasts(
         args.season, refresh=args.refresh
     )
     write_production_artifacts(fantasy, components, features)
@@ -299,9 +299,11 @@ def _preseason_forecast(args: argparse.Namespace) -> None:
         features,
         season=args.season,
         data_as_of=as_of,
+        actual_history=actual_history,
+        completed_week=completed_week,
     )
     print(
-        f"wrote {args.season} preseason forecasts for "
+        f"wrote {args.season} {'rest-of-season' if completed_week else 'preseason'} forecasts for "
         f"{fantasy['player_id'].nunique()} players to {destination}"
     )
     market_path = PROJECT_ROOT / "web" / "market.js"
@@ -398,6 +400,10 @@ def build_parser() -> argparse.ArgumentParser:
     preseason.add_argument("--season", type=int, required=True)
     preseason.add_argument("--refresh", action="store_true")
     preseason.set_defaults(handler=_preseason_forecast)
+    season_forecast = commands.add_parser("season-forecast")
+    season_forecast.add_argument("--season", type=int, required=True)
+    season_forecast.add_argument("--refresh", action="store_true")
+    season_forecast.set_defaults(handler=_preseason_forecast)
     preseason_backtest = commands.add_parser("preseason-backtest")
     preseason_backtest.add_argument("--first-test-season", type=int, default=2018)
     preseason_backtest.add_argument("--last-test-season", type=int, default=2024)

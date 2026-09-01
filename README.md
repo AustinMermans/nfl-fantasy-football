@@ -36,6 +36,7 @@ nfl-fantasy market-feature-audit --quotes path/to/canonical_quotes.parquet
 nfl-fantasy draft-board
 nfl-fantasy draft-policy-stress-test
 nfl-fantasy preseason-forecast --season 2026 --refresh
+nfl-fantasy season-forecast --season 2026 --refresh
 nfl-fantasy preseason-backtest
 nfl-fantasy espn-market --season 2026
 python -m pytest
@@ -74,6 +75,19 @@ through completed 2025 games and forecasts every 2026 matchup from the active
 Week 1 roster, the latest daily depth chart, current schedule, and available
 game lines. Each future week is featurized independently from completed history,
 so an unplayed earlier week is never treated as a zero-stat result.
+
+`season-forecast` is the daily production entry point. Before Week 1 it emits
+the preseason board. Once final scores and weekly stats are available, it fixes
+realized points, removes completed game IDs from the future schedule, and
+publishes a separate rest-of-season forecast. The Week-0 draft projection is
+preserved rather than rewritten by later information.
+
+The rest-of-season mean is an empirical-Bayes blend of the frozen preseason
+prior and the current opponent-aware weekly model. Current evidence gains weight
+as games are played, with position-specific prior sample sizes. A separate
+availability adjustment uses injury onset, expected duration, and the current
+game designation. The UI reports remaining expected points, expected available
+games, projected final points, and league-specific value over replacement.
 
 Rookies receive an empirical predictive distribution from 2012-2025 rookie
 seasons, smoothed by position and log draft-pick distance and combined with the
@@ -148,7 +162,7 @@ file exists. Before the league publishes that report, the board displays
 The random injury prior still runs when a current report is unavailable. When a
 report is present, Out/Doubtful/Questionable status also seeds Week 1 availability.
 
-The public GitHub Pages site contains only this draft-board interface. Pushes to
+The public GitHub Pages site contains draft and rest-of-season views. Pushes to
 `main` run the test suite and deploy the static `web/` directory through
 `.github/workflows/pages.yml`. The workflow also refreshes and deploys current
 inputs daily at 11:00 UTC, which is 4:00 AM Pacific during daylight time.
