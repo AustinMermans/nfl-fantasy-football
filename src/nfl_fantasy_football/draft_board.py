@@ -8,11 +8,13 @@ import pandas as pd
 
 from .config import PROJECT_ROOT
 from .draft_probability import WEEKLY_OUTCOME_PARAMETERS, estimate_weekly_outcome_parameters
-from .draft_strategy import DEFAULT_ROSTER_SLOTS, format_draft_metrics
+from .draft_strategy import format_draft_metrics
 from .fantasy import DEPLOYMENT_SELECTION, _selected_long
 from .injury import FALLBACK_DURATION, FALLBACK_HAZARD
 from .scoring import load_scoring
 
+
+LEAGUE_ROSTER_SLOTS = {"QB": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 2, "K": 1}
 
 DISPLAY_FIELDS = (
     "receptions",
@@ -105,7 +107,7 @@ def build_player_rankings(
     component_predictions: pd.DataFrame,
     *,
     season: int | None = None,
-    teams: int = 12,
+    teams: int = 10,
     roster_slots: dict[str, int] | None = None,
 ) -> list[dict[str, object]]:
     """Aggregate one season of out-of-sample game forecasts into player rankings."""
@@ -189,7 +191,7 @@ def build_player_rankings(
         totals,
         "projected_points",
         teams=teams,
-        roster_slots=roster_slots,
+        roster_slots=roster_slots or LEAGUE_ROSTER_SLOTS,
     )
     totals["value_over_replacement"] = totals["draft_value"]
     (
@@ -200,7 +202,7 @@ def build_player_rankings(
         totals,
         "actual_points",
         teams=teams,
-        roster_slots=roster_slots,
+        roster_slots=roster_slots or LEAGUE_ROSTER_SLOTS,
     )
     totals["actual_value_over_replacement"] = totals["actual_draft_value"]
 
@@ -281,16 +283,16 @@ def export_draft_board(
     payload = {
         "generatedAt": datetime.now(UTC).isoformat(),
         "projectionSeason": selected_season,
-        "scoring": "Traditional non-PPR",
+        "scoring": "Murphs house half-PPR",
         "scope": "Out-of-sample development ranking",
-        "draftFormat": "12-team · 1 QB · 2 RB · 2 WR · 1 TE · 1 FLEX · 1 K",
+        "draftFormat": "10-team · 1 QB · 2 RB · 2 WR · 1 TE · 2 FLEX · 1 K · 8 bench",
         "draftMethod": "Weekly managed-lineup value with bench, bye, and outcome uncertainty",
         "draftConfig": {
-            "teams": 12,
+            "teams": 10,
             "draftSlot": 1,
-            "rosterSlots": DEFAULT_ROSTER_SLOTS,
-            "benchSlots": 4,
-            "rounds": 12,
+            "rosterSlots": LEAGUE_ROSTER_SLOTS,
+            "benchSlots": 8,
+            "rounds": 17,
             "objective": "expected managed weekly lineup points",
         },
         "benchModel": {
@@ -421,17 +423,17 @@ def export_preseason_board(
         "projectionSeason": season,
         "forecastType": "preseason",
         "hasActuals": False,
-        "scoring": "Traditional non-PPR",
+        "scoring": "Murphs house half-PPR",
         "scoringWeights": load_scoring(),
         "scope": f"{season} preseason forecast",
-        "draftFormat": "12-team · 1 QB · 2 RB · 2 WR · 1 TE · 1 FLEX · 1 K",
+        "draftFormat": "10-team · 1 QB · 2 RB · 2 WR · 1 TE · 2 FLEX · 1 K · 8 bench",
         "draftMethod": "Weekly managed-lineup value with bench, bye, and outcome uncertainty",
         "draftConfig": {
-            "teams": 12,
+            "teams": 10,
             "draftSlot": 1,
-            "rosterSlots": DEFAULT_ROSTER_SLOTS,
-            "benchSlots": 4,
-            "rounds": 12,
+            "rosterSlots": LEAGUE_ROSTER_SLOTS,
+            "benchSlots": 8,
+            "rounds": 17,
             "objective": "expected managed weekly lineup points",
         },
         "benchModel": {

@@ -6,7 +6,7 @@ passing_2pt_conversions = 2.0
 rushing_yards = 0.1
 rushing_tds = 6.0
 rushing_2pt_conversions = 2.0
-receptions = 0.0
+receptions = 0.5
 receiving_yards = 0.1
 receiving_tds = 6.0
 receiving_2pt_conversions = 2.0
@@ -17,11 +17,12 @@ fg_made_20_29 = 3.0
 fg_made_30_39 = 3.0
 fg_made_40_49 = 4.0
 fg_made_50_59 = 5.0
-fg_made_60_ = 5.0
+fg_made_60_ = 6.0
+fg_missed_total = -1.0
 pat_made = 1.0
 
 [metadata]
-name = "traditional_non_ppr"
-receptions_per_point = 0.0
+name = "murphs_house_half_ppr"
+receptions_per_point = 0.5
 bonuses = false
-missed_kick_penalties = false
+missed_kick_penalties = true

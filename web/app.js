@@ -2,15 +2,15 @@
   "use strict";
 
   const data = window.NFL_DRAFT_DATA;
-  const storageKey = "nfl-fantasy-draft-board-v4";
-  const previousStorageKey = "nfl-fantasy-draft-board-v3";
+  const storageKey = "nfl-fantasy-draft-board-v5";
+  const previousStorageKey = "nfl-fantasy-draft-board-v4";
   const legacyStorageKey = "nfl-fantasy-draft-board-v1";
   const defaultConfig = data?.draftConfig || {
-    teams: 12, draftSlot: 1, rosterSlots: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1 },
+    teams: 10, draftSlot: 1, rosterSlots: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 2, K: 1 }, benchSlots: 8, rounds: 17,
   };
   const baseScoring = data?.scoringWeights || {
     passing_yards: 0.04, passing_tds: 4, passing_interceptions: -2,
-    rushing_yards: 0.1, rushing_tds: 6, receptions: 0,
+    rushing_yards: 0.1, rushing_tds: 6, receptions: 0.5,
     receiving_yards: 0.1, receiving_tds: 6, fumbles_lost_total: -2,
   };
   const state = {
@@ -55,18 +55,21 @@
 
   function loadPicks() {
     try {
-      const saved = JSON.parse(localStorage.getItem(storageKey) || localStorage.getItem(previousStorageKey));
+      const currentSaved = localStorage.getItem(storageKey);
+      const saved = JSON.parse(currentSaved || localStorage.getItem(previousStorageKey));
       if (saved && Array.isArray(saved.picks)) {
         const validIds = new Set(data.players.map((player) => player.id));
-        state.teams = [8, 10, 12, 14, 16].includes(Number(saved.teams)) ? Number(saved.teams) : state.teams;
-        state.draftSlot = Math.max(1, Math.min(state.teams, Number(saved.draftSlot) || state.draftSlot));
+        state.teams = currentSaved && [8, 10, 12, 14, 16].includes(Number(saved.teams)) ? Number(saved.teams) : state.teams;
+        state.draftSlot = Math.max(1, Math.min(state.teams, currentSaved ? Number(saved.draftSlot) || state.draftSlot : state.draftSlot));
         const seen = new Set();
         state.picks = saved.picks.filter((pick) => validIds.has(pick.id) && ["mine", "other"].includes(pick.owner) && !seen.has(pick.id) && seen.add(pick.id))
           .slice(0, state.teams * Number(defaultConfig.rounds || 12))
           .map((pick, index) => ({ ...pick, overallPick: index + 1, drafterTeam: pick.owner === "mine" ? state.draftSlot : snakeTeam(index + 1) }));
-        state.scenario = saved.scenario || state.scenario;
-        state.policy = saved.policy || state.policy;
-        state.scoring = { ...state.scoring, ...(saved.scoring || {}) };
+        if (currentSaved) {
+          state.scenario = saved.scenario || state.scenario;
+          state.policy = saved.policy || state.policy;
+          state.scoring = { ...state.scoring, ...(saved.scoring || {}) };
+        }
         return;
       }
       const legacy = JSON.parse(localStorage.getItem(legacyStorageKey));
