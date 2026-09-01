@@ -85,13 +85,20 @@ list. League size and lineup slots determine replacement levels directly: base
 starters are allocated first, then FLEX demand goes to the highest projected
 remaining RB/WR/TE players. There are no hand-set QB, TE, or K discounts.
 
+Player value is evaluated as expected points from 18 separately managed weekly
+lineups, with four bench slots. A bench player earns value when he beats a
+rostered starter or weekly position-level waiver replacement during a bye or a
+sampled high outcome. Position-specific volatility comes from 2018-2024
+expanding-window out-of-sample residuals. Rookie P10/P50/P90 is sampled as a
+season-level role state, preserving stash upside without a manual rookie bonus.
+
 At every Mine/Taken action, the board recomputes the snake state and runs 16
 common-seed simulations of the intervening picks. Opponents follow a
 roster-aware quantal-response policy over format-value rank. Logged opponent
 picks update a Bayesian mixture of Balanced, RB-heavy, WR-heavy, Early-QB, and
-Zero-RB room styles. Candidate utility is the expected legal starter
-value after the next turn. Rookie uncertainty adds only expected option payoff
-above the position replacement level, rather than a manual rookie bonus.
+Zero-RB room styles. Candidate utility is the expected managed weekly lineup
+value after the next turn. Once the 12-player roster is full, a candidate must
+improve the roster after the weakest asset is dropped.
 Controls support 8-16 teams, any snake slot, Standard/Half/Full PPR, four- or
 six-point passing touchdowns, interception scoring, and RB/WR stress scenarios.
 
@@ -108,7 +115,7 @@ run and trails slightly in balanced and WR-run rooms. The report is written to
 
 Because the old lookahead failed to dominate roster-aware greedy, the new
 probability lookahead is presented as an unvalidated decision aid and can be
-switched to immediate roster value.
+switched to weekly roster value.
 
 This is deliberately called a stress test, not a preseason backtest. The 2024
 board aggregates weekly out-of-sample forecasts that use information available

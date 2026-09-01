@@ -124,7 +124,7 @@ official model without violating the holdout design.
 ## Draft recommendation
 
 The draft layer does not train new player outcomes or alter the component
-forecast. It converts projected season points into a format-specific sequential
+forecast. It converts projected weekly points into a format-specific sequential
 decision. League-wide base starter counts are the number of teams times each
 position slot. FLEX slots are allocated to the highest projected remaining
 RB/WR/TE players, and each position's last selected starter defines replacement
@@ -134,13 +134,16 @@ During a draft, the browser persists the Mine/Taken log and league settings,
 computes the snake turn, and runs 16 common-seed simulations of intervening
 opponent selections. Opponents sample from a roster-aware softmax over the
 format-value rank with duplicate-position, starter-need, bench-demand, and room-
-run terms. Each candidate is evaluated by expected legal starter value after
-the next turn. Empty slots are filled at format-derived replacement so an
-incomplete roster does not make raw QB points dominate. No realized outcome
-enters the recommendation.
+run terms. Each candidate is evaluated by expected managed weekly lineup value
+after the next turn. Twelve common outcome paths cover Weeks 1-18, with bye
+weeks set to zero and the legal lineup reoptimized each week. Empty slots are
+filled at format-derived weekly replacement so an incomplete roster does not
+make raw QB points dominate. Four bench slots cap the roster at 12 players. No
+realized outcome enters the recommendation.
 
-Rookies add only empirical expected option value above replacement using their
-P10/P50/P90 analog distribution. The policy is a one-turn quantal-response
+Rookie P10/P50/P90 is sampled once per outcome path as a persistent role state.
+Weekly lognormal shocks use position-specific 2018-2024 expanding-window
+out-of-sample residual scales. The policy is a one-turn quantal-response
 prior, not a calibrated market-survival model. It does not solve the complete
 draft as a stochastic game. Point-in-time ADP, raw draft sequences, correlated
 player outcomes, and frozen Week-0 backtests are required before calling it an

@@ -1,10 +1,12 @@
 import pytest
+import pandas as pd
 
 from nfl_fantasy_football.draft_probability import (
     LeagueConfig,
     bayesian_model_update,
     bench_option_value,
     conditional_survival,
+    estimate_weekly_outcome_parameters,
     quantal_response_probabilities,
 )
 
@@ -21,6 +23,24 @@ def test_quantal_response_is_normalized_and_favors_utility() -> None:
 
 def test_bench_option_value_only_counts_upside_over_replacement() -> None:
     assert bench_option_value([40.0, 100.0, 160.0], 100.0) == pytest.approx(20.0)
+
+
+def test_weekly_outcome_parameters_use_draft_relevant_oos_rows() -> None:
+    predictions = pd.DataFrame(
+        {
+            "position": ["RB"] * 6 + ["QB"] * 2,
+            "actual_fantasy_points": [1.0, 2.0, 3.0, 8.0, 12.0, 18.0, 10.0, 16.0],
+            "predicted_fantasy_points": [1.0, 2.0, 3.0, 6.0, 10.0, 12.0, 11.0, 15.0],
+            "fantasy_relevant": [True] * 7 + [False],
+        }
+    )
+
+    parameters = estimate_weekly_outcome_parameters(predictions)
+
+    assert parameters["RB"]["sampleSize"] == 3
+    assert parameters["RB"]["forecastThreshold"] == pytest.approx(4.5)
+    assert parameters["RB"]["relativeError68"] > 0
+    assert parameters["QB"]["sampleSize"] == 1
 
 
 def test_league_config_rejects_invalid_draft_slot() -> None:

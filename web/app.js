@@ -133,36 +133,6 @@
     return metrics;
   }
 
-  function optimalLineupValue(players) {
-    const slots = defaultConfig.rosterSlots;
-    const selected = new Set();
-    let total = 0;
-    ["QB", "RB", "WR", "TE", "K"].forEach((position) => {
-      players.filter((player) => player.position === position)
-        .sort((a, b) => pointsFor(b) - pointsFor(a))
-        .slice(0, slots[position])
-        .forEach((player) => { selected.add(player.id); total += pointsFor(player); });
-    });
-    players.filter((player) => ["RB", "WR", "TE"].includes(player.position) && !selected.has(player.id))
-      .sort((a, b) => pointsFor(b) - pointsFor(a))
-      .slice(0, slots.FLEX)
-      .forEach((player) => { total += pointsFor(player); });
-    return total;
-  }
-
-  function rosterValue(players, metrics) {
-    const slots = defaultConfig.rosterSlots;
-    const replacements = {};
-    data.players.forEach((player) => { replacements[player.position] = metrics.get(player.id).replacement; });
-    const replacementPlayers = ["QB", "RB", "WR", "TE", "K"].flatMap((position) =>
-      Array.from({ length: slots[position] + (["RB", "WR", "TE"].includes(position) ? slots.FLEX : 0) }, (_, index) => ({
-        id: `replacement-${position}-${index}`,
-        position,
-        _points: replacements[position] || 0,
-      })));
-    return optimalLineupValue([...players, ...replacementPlayers]);
-  }
-
   function scaledRange(player) {
     const range = player.projectionRange || {};
     const current = pointsFor(player);
@@ -177,13 +147,98 @@
     };
   }
 
-  function rookieOptionValue(player, replacement) {
+  function hashUniform(value) {
+    let hash = 2166136261;
+    for (let index = 0; index < value.length; index += 1) {
+      hash ^= value.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    return ((hash >>> 0) + 0.5) / 4294967296;
+  }
+
+  function standardNormal(key) {
+    const first = Math.max(hashUniform(`${key}-a`), 1e-9);
+    const second = hashUniform(`${key}-b`);
+    return Math.sqrt(-2 * Math.log(first)) * Math.cos(2 * Math.PI * second);
+  }
+
+  function rookieRoleMultiplier(player, scenario) {
     const range = scaledRange(player);
-    if (range.source !== "historical rookie analogs") return 0;
-    const expectedBest = 0.25 * Math.max(range.p10, replacement)
-      + 0.5 * Math.max(range.p50, replacement)
-      + 0.25 * Math.max(range.p90, replacement);
-    return Math.max(0, expectedBest - Math.max(pointsFor(player), replacement));
+    if (range.source !== "historical rookie analogs") return 1;
+    const average = 0.25 * range.p10 + 0.5 * range.p50 + 0.25 * range.p90;
+    if (average <= 0) return 1;
+    const draw = hashUniform(`${player.id}-${scenario}-rookie`);
+    const outcome = draw < 0.25 ? range.p10 : draw < 0.75 ? range.p50 : range.p90;
+    return outcome / average;
+  }
+
+  function buildWeeklyOutcomes(metrics) {
+    const weeks = Number(data.benchModel?.weeks || 18);
+    const simulations = Number(data.benchModel?.simulations || 12);
+    const parameters = data.benchModel?.parametersByPosition || {};
+    const outcomes = new Map();
+    data.players.forEach((player) => {
+      const games = new Map(player.games.map((game) => [Number(game.week), game]));
+      const positionError = Math.min(0.9, Math.max(0.25, Number(parameters[player.position]?.relativeError68 || 0.6)));
+      const logSigma = Math.sqrt(Math.log(1 + positionError ** 2));
+      const values = new Float64Array(weeks * simulations);
+      for (let scenario = 0; scenario < simulations; scenario += 1) {
+        const roleMultiplier = rookieRoleMultiplier(player, scenario);
+        for (let week = 1; week <= weeks; week += 1) {
+          const game = games.get(week);
+          if (!game) continue;
+          const mean = Math.max(0, gamePointsFor(game)) * roleMultiplier;
+          const noise = Math.exp(logSigma * standardNormal(`${player.id}-${scenario}-${week}`) - 0.5 * logSigma ** 2);
+          values[scenario * weeks + week - 1] = mean * noise;
+        }
+      }
+      outcomes.set(player.id, values);
+    });
+    const replacements = Object.fromEntries(["QB", "RB", "WR", "TE", "K"].map((position) => {
+      const player = data.players.find((item) => item.position === position);
+      return [position, player ? metrics.get(player.id).replacement / 17 : 0];
+    }));
+    return { outcomes, replacements, weeks, simulations };
+  }
+
+  function weeklyLineupValue(players, index, weekly) {
+    const slots = defaultConfig.rosterSlots;
+    const buckets = Object.fromEntries(["QB", "RB", "WR", "TE", "K"].map((position) => [position, []]));
+    players.forEach((player) => buckets[player.position]?.push(weekly.outcomes.get(player.id)?.[index] || 0));
+    Object.keys(buckets).forEach((position) => {
+      const count = Number(slots[position] || 0) + (["RB", "WR", "TE"].includes(position) ? Number(slots.FLEX || 0) : 0);
+      buckets[position].push(...Array.from({ length: count }, () => weekly.replacements[position]));
+      buckets[position].sort((a, b) => b - a);
+    });
+    let total = 0;
+    const flex = [];
+    ["QB", "RB", "WR", "TE", "K"].forEach((position) => {
+      total += buckets[position].slice(0, slots[position]).reduce((sum, value) => sum + value, 0);
+      if (["RB", "WR", "TE"].includes(position)) flex.push(...buckets[position].slice(slots[position]));
+    });
+    flex.sort((a, b) => b - a);
+    return total + flex.slice(0, slots.FLEX).reduce((sum, value) => sum + value, 0);
+  }
+
+  function managedRosterValue(players, weekly, cache) {
+    const capacity = Object.values(defaultConfig.rosterSlots).reduce((sum, value) => sum + Number(value), 0)
+      + Number(defaultConfig.benchSlots || 4);
+    if (players.length > capacity) {
+      return Math.max(...players.map((_, index) => managedRosterValue(
+        players.filter((_player, playerIndex) => playerIndex !== index), weekly, cache,
+      )));
+    }
+    const key = players.map((player) => player.id).sort().join("|");
+    if (cache.has(key)) return cache.get(key);
+    let total = 0;
+    for (let scenario = 0; scenario < weekly.simulations; scenario += 1) {
+      for (let week = 0; week < weekly.weeks; week += 1) {
+        total += weeklyLineupValue(players, scenario * weekly.weeks + week, weekly);
+      }
+    }
+    const expected = total / weekly.simulations;
+    cache.set(key, expected);
+    return expected;
   }
 
   function archetypeBonus(archetype, position, round) {
@@ -321,6 +376,8 @@
     const available = data.players.filter((player) => statusFor(player.id) === "available");
     const myRoster = data.players.filter((player) => statusFor(player.id) === "mine");
     const metrics = formatMetrics();
+    const weekly = buildWeeklyOutcomes(metrics);
+    const rosterCache = new Map();
     const posterior = roomPosterior(metrics);
     const currentPick = state.picks.length + 1;
     const onClock = snakeTeam(currentPick) === state.draftSlot;
@@ -341,10 +398,9 @@
         .sort((a, b) => metrics.get(a.id).rank - metrics.get(b.id).rank)
         .slice(0, 6).map((player) => player.id)),
     ]);
-    const withoutCandidate = rosterValue(myRoster, metrics);
+    const withoutCandidate = managedRosterValue(myRoster, weekly, rosterCache);
     const candidates = available.map((candidate) => {
-      const immediateValue = rosterValue([...myRoster, candidate], metrics)
-        + rookieOptionValue(candidate, metrics.get(candidate.id).replacement);
+      const immediateValue = managedRosterValue([...myRoster, candidate], weekly, rosterCache);
       const currentRound = Math.floor((decisionPick - 1) / state.teams) + 1;
       const timingEligible = candidate.position !== "K" || currentRound >= Number(defaultConfig.rounds || 12);
       let decisionValue = immediateValue;
@@ -356,9 +412,9 @@
             .filter((player) => player.position === position)
             .sort((a, b) => pointsFor(b) - pointsFor(a))[0]).filter(Boolean);
           const bestContinuation = nextOptions.length
-            ? Math.max(...nextOptions.map((nextPlayer) => rosterValue([...myRoster, candidate, nextPlayer], metrics)
-              + rookieOptionValue(candidate, metrics.get(candidate.id).replacement)
-              + rookieOptionValue(nextPlayer, metrics.get(nextPlayer.id).replacement)))
+            ? Math.max(...nextOptions.map((nextPlayer) => managedRosterValue(
+              [...myRoster, candidate, nextPlayer], weekly, rosterCache,
+            )))
             : immediateValue;
           total += bestContinuation;
         });
@@ -368,6 +424,7 @@
         player: candidate,
         decisionValue,
         immediateValue,
+        immediateGain: immediateValue - withoutCandidate,
         protectedGain: decisionValue - withoutCandidate,
         survivalProbability: Number(baselineSurvival.get(candidate.id) || 0) / simulationCount,
         baseValue: metrics.get(candidate.id).value,
@@ -542,6 +599,7 @@
         <td class="number-cell projection"><strong>${projectedPoints.toFixed(1)}</strong></td>
         <td class="number-cell actual-total actual-column">${data.hasActuals ? player.actualPoints.toFixed(1) : "-"}</td>
         <td class="number-cell">${(projectedPoints / player.projectedGames).toFixed(2)}</td>
+        <td class="number-cell draft-value" title="Expected managed weekly lineup points added to your current roster">${recommendation ? `${recommendation.immediateGain >= 0 ? "+" : ""}${recommendation.immediateGain.toFixed(1)}` : "-"}</td>
         <td class="number-cell draft-value" title="${state.sort === "actual_draft" ? "Hindsight value over the format-derived replacement player" : "Estimated probability of surviving to your next pick under the selected opponent scenario"}">${state.sort === "actual_draft" ? `${displayedDraftValue > 0 ? "+" : ""}${displayedDraftValue.toFixed(1)}` : recommendation ? `${Math.round(displayedDraftValue * 100)}%` : "-"}</td>
         <td>${statusMarkup(player, status)}</td>
         <td class="actions-cell">
@@ -554,7 +612,7 @@
       </tr>
       ${expanded ? `
         <tr class="detail-row">
-          <td colspan="11">${playerDetail(player)}</td>
+          <td colspan="12">${playerDetail(player)}</td>
         </tr>
       ` : ""}
     `;
@@ -572,6 +630,12 @@
     const baseFlexUsed = ["RB", "WR", "TE"].reduce((total, position) => total + Math.min(counts[position] || 0, slots[position]), 0);
     const flexFilled = Math.min(slots.FLEX, Math.max(0, flexEligible - baseFlexUsed));
     base.splice(4, 0, `<span class="need-chip${flexFilled < slots.FLEX ? " open" : " filled"}">FLEX ${flexFilled}/${slots.FLEX}</span>`);
+    const filledBase = ["QB", "RB", "WR", "TE", "K"].reduce(
+      (total, position) => total + Math.min(counts[position] || 0, slots[position]), 0,
+    );
+    const benchUsed = Math.max(0, mine.length - filledBase - flexFilled);
+    const benchSlots = Number(defaultConfig.benchSlots || 4);
+    base.push(`<span class="need-chip${benchUsed < benchSlots ? " open" : " filled"}">Bench ${benchUsed}/${benchSlots}</span>`);
     return base.join("");
   }
 
@@ -710,7 +774,7 @@
     $("seasonLabel").textContent = data.forecastType === "preseason" ? `${data.projectionSeason} preseason` : `${data.projectionSeason} validation season`;
     $("modelStatus").textContent = `${scoringName()} · ${data.forecastType === "preseason" ? "current forecast" : "development model"}`;
     $("methodLabel").textContent = data.forecastType === "preseason"
-      ? `${data.scope}. Models refit through ${data.trainingThrough}; active rosters, starter depth, schedule, and game lines as of ${new Date(data.dataAsOf).toLocaleString()}. Recommendations simulate opponent choices and your next snake turn.`
+      ? `${data.scope}. Models refit through ${data.trainingThrough}; active rosters, starter depth, schedule, and game lines as of ${new Date(data.dataAsOf).toLocaleString()}. Recommendations simulate managed weekly lineups, four bench slots, opponent choices, and your next snake turn.`
       : `${data.scope}. Recommendations combine game-level forecasts, format-derived replacement value, your roster, and the projected pool at your next snake turn; this remains a ${data.projectionSeason} out-of-sample validation board, not a live ${new Date().getFullYear()} preseason ranking.`;
     $("footerScope").textContent = `${data.projectionSeason} · ${scoringName()} · ${data.players.length} fantasy-relevant players`;
     $("injuryStatus").textContent = data.injuryReportsAvailable

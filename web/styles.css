@@ -104,9 +104,9 @@ h1 { margin: 0; font-size: 38px; line-height: 1.05; letter-spacing: 0; }
 .rankings-table th:nth-child(3) { width: 23%; }
 .rankings-table th:nth-child(4) { width: 60px; }
 .rankings-table th:nth-child(5) { width: 62px; }
-.rankings-table th:nth-child(6), .rankings-table th:nth-child(7), .rankings-table th:nth-child(8), .rankings-table th:nth-child(9) { width: 90px; }
-.rankings-table th:nth-child(10) { width: 96px; }
-.rankings-table th:nth-child(11) { width: 118px; }
+.rankings-table th:nth-child(6), .rankings-table th:nth-child(7), .rankings-table th:nth-child(8), .rankings-table th:nth-child(9), .rankings-table th:nth-child(10) { width: 88px; }
+.rankings-table th:nth-child(11) { width: 96px; }
+.rankings-table th:nth-child(12) { width: 118px; }
 .player-row { cursor: pointer; }
 .player-row:hover { background: #fafcfb; }
 .player-row.mine { background: var(--green-soft); }
@@ -190,7 +190,7 @@ footer { max-width: 1420px; margin: 0 auto; padding: 18px 24px 26px; display: fl
   .search-field { flex: 1; }
   .search-field input { width: 100%; }
   .table-shell { overflow-x: auto; }
-  .rankings-table { min-width: 920px; }
+  .rankings-table { min-width: 1020px; }
   .player-detail { padding-left: 22px; }
 }
 

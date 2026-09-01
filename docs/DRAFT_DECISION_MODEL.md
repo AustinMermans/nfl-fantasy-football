@@ -2,9 +2,9 @@
 
 ## Objective and state
 
-The deployed objective is expected points from the best legal season-long
-starting lineup. It is not championship probability, weekly managed points, or
-best-ball scoring. The state contains the overall pick, snake order, available
+The deployed objective is expected points from 18 separately managed weekly
+lineups. It is not championship probability or best-ball scoring. The state
+contains the overall pick, snake order, available
 players, observed picks, inferred manager rosters, league size, lineup slots,
 and scoring weights.
 
@@ -20,25 +20,32 @@ a historical analog distribution using same-position rookie seasons from
 combined with the current depth-role center. The UI exposes P10, P50, P90, and
 effective sample size.
 
-The range is empirical and uncalibrated. It does not yet sample coherent weekly
-stat trajectories or impose a shared team opportunity budget. The next version
-should estimate a smoothed rookie role state, update it with preseason depth,
-and resample entire historical component trajectories within that role. Draft
-utility may then use `E[max(X, replacement)]`; it should never apply an arbitrary
-rookie multiplier.
+The range is empirical and uncalibrated. The deployed simulation samples one
+P10/P50/P90 rookie role state per season path and combines it with weekly
+outcome noise. It does not yet impose a shared team opportunity budget. The next
+version should estimate a smoothed rookie role state, update it with preseason
+depth, and resample entire historical component trajectories within that role.
 
 ## Live pick policy
 
 For each candidate `a`, the board estimates:
 
-`Q(state, a) = E[value(roster after a and the next snake turn)]`.
+`Q(state, a) = E[managed weekly points after a and the next snake turn]`.
 
 It uses 16 common-seed Monte Carlo paths. Each intervening manager samples an
 available player from a softmax over format-value rank, unfilled starter need,
 duplicate-position cost, RB/WR bench demand, and a sampled room archetype.
-The candidate with the largest expected two-turn legal-lineup value ranks first.
+The candidate with the largest expected two-turn weekly-lineup value ranks first.
 The board also reports the fraction of baseline paths in which each player
 survives to the next turn.
+
+For every candidate, 12 common outcome paths run across Weeks 1-18. A missing
+scheduled game is a bye and scores zero. Within each week, the simulator chooses
+the best legal QB/RB/WR/TE/FLEX/K lineup from the roster and fills empty slots at
+the position's format-derived weekly replacement level. Position-specific
+lognormal volatility is fit from 2018-2024 expanding-window out-of-sample
+residuals. Four explicit bench slots cap the roster at 12 players; once full,
+the candidate is valued only after optimally dropping one current player.
 
 A final-round kicker timing prior prevents the short horizon from spending an
 early pick on a position whose replacement pool is expected to remain available.

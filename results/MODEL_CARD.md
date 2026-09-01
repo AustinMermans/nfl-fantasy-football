@@ -129,9 +129,21 @@ positional multipliers have been removed.
 The live layer evaluates the available pool, inferred opponent rosters, the
 user's roster, snake slot, and picks until the next turn. Sixteen common-seed
 Monte Carlo paths sample roster-aware quantal-response opponent choices. Each
-candidate is ranked by expected legal-lineup value after the next turn. Rookie
-uncertainty contributes expected option payoff above replacement, and the UI
-reports empirical P10/P50/P90 plus simulated next-turn survival.
+candidate is ranked by expected managed weekly lineup value after the next
+turn. The roster utility uses 12 common outcome paths across Weeks 1-18, sets
+bye weeks to zero, optimizes the legal QB/RB/WR/TE/FLEX/K lineup each week, and
+fills open slots at a position-level waiver replacement. Four bench slots make
+depth valuable only when it enters a weekly lineup; a 13th player must displace
+an existing roster asset.
+
+Weekly outcome volatility is estimated from 2018-2024 expanding-window
+out-of-sample fantasy-point residuals among the upper half of each position's
+forecast distribution. The central 68% relative-error scales are `0.466` QB,
+`0.637` RB, `0.752` WR, `0.855` TE, and `0.504` K. Simulations use mean-preserving
+lognormal weekly shocks. Rookie P10/P50/P90 is sampled once per path as a
+season-level role state, so breakout value is captured through optimal lineup
+selection instead of a manual bonus. The UI reports this immediate roster gain
+alongside simulated next-turn survival.
 
 Adaptive opponent behavior is a five-model Bayesian mixture: 40% prior mass on
 Balanced and 15% each on RB-heavy, WR-heavy, Early-QB, and Zero-RB. Each observed
@@ -171,8 +183,9 @@ cross-fold grouped improvement exceeds the screened subset.
 - Individual defensive statistics and team D/ST are not yet modeled.
 - Kicker single-game ranking is weak. A team-implied-points layer has a modest
   grouped improvement but fails the individual-field multiple-testing gate.
-- Veteran component dependence and predictive distributions are not yet
-  simulated, so best-ball, head-to-head, and championship objectives are absent.
+- Weekly residual shocks are independent across players and weeks. Multiweek
+  injuries, same-team opportunity constraints, schedule-level dependence,
+  head-to-head win probability, and championship objectives remain absent.
 - The live draft policy has a stochastic one-turn prior but lacks fitted
   point-in-time ADP survival and a preseason walk-forward draft backtest. The current
   stress test aggregates weekly forecasts containing in-season information, so

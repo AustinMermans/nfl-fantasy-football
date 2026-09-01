@@ -4,6 +4,42 @@ from dataclasses import dataclass, field
 from math import exp
 from typing import Mapping, Sequence
 
+import pandas as pd
+
+
+WEEKLY_OUTCOME_PARAMETERS: dict[str, dict[str, float | int]] = {
+    "K": {
+        "sampleSize": 735,
+        "forecastThreshold": 7.7196,
+        "relativeError68": 0.5043,
+        "rmse": 4.4601,
+    },
+    "QB": {
+        "sampleSize": 1983,
+        "forecastThreshold": 15.4596,
+        "relativeError68": 0.4655,
+        "rmse": 8.2488,
+    },
+    "RB": {
+        "sampleSize": 3189,
+        "forecastThreshold": 8.3337,
+        "relativeError68": 0.6373,
+        "rmse": 7.4906,
+    },
+    "TE": {
+        "sampleSize": 3717,
+        "forecastThreshold": 2.7461,
+        "relativeError68": 0.8553,
+        "rmse": 4.6725,
+    },
+    "WR": {
+        "sampleSize": 6279,
+        "forecastThreshold": 5.5463,
+        "relativeError68": 0.7515,
+        "rmse": 6.2904,
+    },
+}
+
 
 @dataclass(frozen=True)
 class LeagueConfig:
@@ -67,6 +103,44 @@ def bench_option_value(outcomes: Sequence[float], replacement_points: float) -> 
     if not outcomes:
         return 0.0
     return sum(max(0.0, float(value) - replacement_points) for value in outcomes) / len(outcomes)
+
+
+def estimate_weekly_outcome_parameters(
+    predictions: pd.DataFrame,
+) -> dict[str, dict[str, float | int]]:
+    """Estimate robust weekly forecast noise from out-of-sample predictions.
+
+    The upper half of each position's forecast distribution approximates the
+    player pool that reaches managed fantasy rosters. Relative residuals use a
+    three-point denominator floor so low-volume positions cannot explode.
+    """
+    required = {
+        "position",
+        "actual_fantasy_points",
+        "predicted_fantasy_points",
+        "fantasy_relevant",
+    }
+    missing = required.difference(predictions.columns)
+    if missing:
+        raise ValueError(f"predictions missing columns: {sorted(missing)}")
+
+    eligible = predictions.loc[
+        predictions["fantasy_relevant"].fillna(False)
+        & predictions["position"].isin(("QB", "RB", "WR", "TE", "K"))
+    ].copy()
+    parameters: dict[str, dict[str, float | int]] = {}
+    for position, rows in eligible.groupby("position", observed=True):
+        threshold = float(rows["predicted_fantasy_points"].median())
+        rows = rows.loc[rows["predicted_fantasy_points"] >= threshold]
+        residual = rows["actual_fantasy_points"] - rows["predicted_fantasy_points"]
+        relative_error = residual.abs() / rows["predicted_fantasy_points"].clip(lower=3.0)
+        parameters[str(position)] = {
+            "sampleSize": int(len(rows)),
+            "forecastThreshold": round(threshold, 4),
+            "relativeError68": round(float(relative_error.quantile(0.68)), 4),
+            "rmse": round(float((residual.pow(2).mean()) ** 0.5), 4),
+        }
+    return parameters
 
 
 def bayesian_model_update(

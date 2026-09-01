@@ -7,6 +7,7 @@ from pathlib import Path
 import pandas as pd
 
 from .config import PROJECT_ROOT
+from .draft_probability import WEEKLY_OUTCOME_PARAMETERS, estimate_weekly_outcome_parameters
 from .draft_strategy import DEFAULT_ROSTER_SLOTS, format_draft_metrics
 from .fantasy import DEPLOYMENT_SELECTION, _selected_long
 from .scoring import load_scoring
@@ -278,8 +279,22 @@ def export_draft_board(
         "scoring": "Traditional non-PPR",
         "scope": "Out-of-sample development ranking",
         "draftFormat": "12-team · 1 QB · 2 RB · 2 WR · 1 TE · 1 FLEX · 1 K",
-        "draftMethod": "Format-derived starter value with live next-turn scarcity and roster fit",
-        "draftConfig": {"teams": 12, "draftSlot": 1, "rosterSlots": DEFAULT_ROSTER_SLOTS},
+        "draftMethod": "Weekly managed-lineup value with bench, bye, and outcome uncertainty",
+        "draftConfig": {
+            "teams": 12,
+            "draftSlot": 1,
+            "rosterSlots": DEFAULT_ROSTER_SLOTS,
+            "benchSlots": 4,
+            "rounds": 12,
+            "objective": "expected managed weekly lineup points",
+        },
+        "benchModel": {
+            "weeks": 18,
+            "simulations": 12,
+            "parametersByPosition": estimate_weekly_outcome_parameters(fantasy),
+            "source": "2018-2024 expanding-window out-of-sample residuals",
+            "replacementPolicy": "weekly position-level waiver fill",
+        },
         "players": build_player_rankings(
             fantasy, component_predictions, season=selected_season
         ),
@@ -352,6 +367,12 @@ def export_preseason_board(
             "practiceStatus": _text(role.get("practice_status")),
         }
     injury_available = bool(future_features["current_injury_feed"].any())
+    prediction_path = PROJECT_ROOT / "results" / "fantasy_point_predictions.parquet"
+    outcome_parameters = (
+        estimate_weekly_outcome_parameters(pd.read_parquet(prediction_path))
+        if prediction_path.exists()
+        else WEEKLY_OUTCOME_PARAMETERS
+    )
     payload = {
         "generatedAt": datetime.now(UTC).isoformat(),
         "dataAsOf": data_as_of,
@@ -363,14 +384,21 @@ def export_preseason_board(
         "scoringWeights": load_scoring(),
         "scope": f"{season} preseason forecast",
         "draftFormat": "12-team · 1 QB · 2 RB · 2 WR · 1 TE · 1 FLEX · 1 K",
-        "draftMethod": "Format-derived starter value with current roster and depth chart",
+        "draftMethod": "Weekly managed-lineup value with bench, bye, and outcome uncertainty",
         "draftConfig": {
             "teams": 12,
             "draftSlot": 1,
             "rosterSlots": DEFAULT_ROSTER_SLOTS,
             "benchSlots": 4,
             "rounds": 12,
-            "objective": "expected optimal starter points",
+            "objective": "expected managed weekly lineup points",
+        },
+        "benchModel": {
+            "weeks": 18,
+            "simulations": 12,
+            "parametersByPosition": outcome_parameters,
+            "source": "2018-2024 expanding-window out-of-sample residuals",
+            "replacementPolicy": "weekly position-level waiver fill",
         },
         "injuryReportsAvailable": injury_available,
         "injurySource": "nflverse/NFL game-status reports"
