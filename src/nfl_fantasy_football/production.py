@@ -450,9 +450,18 @@ def apply_current_role_adjustments(
     rookie = adjustments["is_rookie"]
     adjustments["adjusted_points"] = adjustments["predicted_fantasy_points"]
     adjustments["preseason_projection"] = adjustments["preseason_mean"]
+    adjustments["preseason_projection_source"] = "season ensemble"
+    veteran_fallback = ~rookie & adjustments["preseason_projection"].isna()
+    adjustments.loc[veteran_fallback, "preseason_projection"] = adjustments.loc[
+        veteran_fallback, "role_prior_points"
+    ]
+    adjustments.loc[veteran_fallback, "preseason_projection_source"] = (
+        "current role-prior fallback"
+    )
     adjustments.loc[rookie, "preseason_projection"] = adjustments.loc[
         rookie, "rookie_prior_mean"
     ].fillna(adjustments.loc[rookie, "role_prior_points"])
+    adjustments.loc[rookie, "preseason_projection_source"] = "rookie analog prior"
     shrinkage = adjustments["preseason_projection"].notna()
     blended = adjustments.loc[shrinkage].apply(
         lambda row: blend_remaining_projection(
@@ -461,7 +470,6 @@ def apply_current_role_adjustments(
             remaining_games=int(row["future_games"]),
             games_played=float(row["current_games_played"]),
             position=str(row["position"]),
-            rookie=bool(row["is_rookie"]),
         ),
         axis=1,
     )
@@ -497,6 +505,7 @@ def apply_current_role_adjustments(
             "adjusted_points",
             "preseason_mean",
             "preseason_projection",
+            "preseason_projection_source",
             "future_games",
             "current_games_played",
             "inseason_component_weight",
@@ -573,6 +582,7 @@ def build_season_forecasts(
         future_features[column] = future_features["player_id"].map(values)
     for column in (
         "preseason_projection",
+        "preseason_projection_source",
         "current_games_played",
         "future_games",
         "inseason_component_weight",

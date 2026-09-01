@@ -105,7 +105,8 @@ prior two seasons' points, points per game, games, games played, snap share,
 age, experience, draft pick, career length, and position. The season model
 supplies 100% of every veteran's Week-0 center. Component forecasts determine
 weekly matchup shape and gain mean weight only as current-season games are
-observed.
+observed. Veterans below the 20-point minimum-history threshold use a labeled
+current position-depth role-prior fallback; they do not revert to the game model.
 
 The season-total model is evaluated with an expanding 2018-2024 walk-forward
 window. Against prior-season points, fold-average RMSE improves from `65.024` to
@@ -180,7 +181,7 @@ TE 3, and K 3 league maxima.
 Weekly outcome volatility is estimated from 2018-2024 expanding-window
 out-of-sample fantasy-point residuals among the upper half of each position's
 forecast distribution. The central 68% relative-error scales are `0.466` QB,
-`0.637` RB, `0.752` WR, `0.855` TE, and `0.504` K. Simulations use mean-preserving
+`0.594` RB, `0.683` WR, `0.779` TE, and `0.504` K. Simulations use mean-preserving
 lognormal weekly shocks. Rookie P10/P50/P90 is displayed as an uncalibrated
 historical analog range but does not enter decision paths. The UI reports immediate roster gain
 alongside simulated next-turn survival.

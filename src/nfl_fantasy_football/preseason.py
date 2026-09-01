@@ -11,14 +11,6 @@ from sklearn.preprocessing import StandardScaler
 from .scoring import score_components
 
 
-DEFAULT_COMPONENT_WEIGHT = 0.25
-COMPONENT_WEIGHT_BY_POSITION = {
-    "QB": 0.0,
-    "RB": DEFAULT_COMPONENT_WEIGHT,
-    "WR": DEFAULT_COMPONENT_WEIGHT,
-    "TE": DEFAULT_COMPONENT_WEIGHT,
-    "K": DEFAULT_COMPONENT_WEIGHT,
-}
 MIN_PRIOR_POINTS = 20.0
 SEASON_FEATURES = (
     "prior_points",

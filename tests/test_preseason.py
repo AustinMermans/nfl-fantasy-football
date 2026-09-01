@@ -1,7 +1,6 @@
 import pandas as pd
 
 from nfl_fantasy_football.preseason import (
-    COMPONENT_WEIGHT_BY_POSITION,
     current_preseason_rows,
     season_player_panel,
     walk_forward_preseason_backtest,
@@ -53,11 +52,6 @@ def test_current_rows_do_not_treat_a_gap_as_last_season() -> None:
 
     assert pd.isna(current.loc["gap", "prior_points"])
     assert current.loc["active", "prior_points"] == 6.0
-
-
-def test_qb_total_does_not_use_frozen_weekly_component_blend() -> None:
-    assert COMPONENT_WEIGHT_BY_POSITION["QB"] == 0.0
-    assert COMPONENT_WEIGHT_BY_POSITION["RB"] > 0.0
 
 
 def test_walk_forward_prediction_is_unchanged_by_future_season() -> None:

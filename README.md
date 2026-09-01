@@ -87,6 +87,8 @@ prior and the current opponent-aware weekly model. The preseason model supplies
 the complete Week-0 center; current evidence gains weight only as games are
 played, with position-specific prior sample sizes. The published mean remains
 unconditional because the season-total target already includes missed games.
+Veterans below the season ensemble's minimum-history threshold use a labeled
+current depth-role prior rather than silently reverting to the game model.
 The UI separately reports scenario expected games, projected final points, and
 league-specific value over replacement.
 
@@ -161,7 +163,7 @@ roster. Detailed injury designations are ingested when a current nflverse injury
 file exists. Before the league publishes that report, the board displays
 "unavailable" and treats missing injury data as unknown, never as healthy.
 The random injury prior still runs when a current report is unavailable. When a
-report is present, Out/Doubtful/Questionable status also seeds Week 1 availability.
+report is present, Out/Doubtful/Questionable status applies to its exact report week.
 
 The public GitHub Pages site contains draft and rest-of-season views. Pushes to
 `main` run the test suite and deploy the static `web/` directory through

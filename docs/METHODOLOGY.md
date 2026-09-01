@@ -141,6 +141,10 @@ availability; expected games are a separate scenario diagnostic. ROS value over
 replacement uses the same league-size and lineup-derived starter demand as the
 draft model.
 
+Veterans below the season model's 20-point prior-season eligibility threshold
+use the median current position-depth role as a labeled fallback center. Rookies
+use the separate analog-role prior. Both receive zero Week-0 game-model weight.
+
 ## Draft recommendation
 
 The draft layer does not train new player outcomes or alter the component

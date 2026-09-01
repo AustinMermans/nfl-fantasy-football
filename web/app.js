@@ -201,10 +201,6 @@
     return Math.sqrt(-2 * Math.log(first)) * Math.cos(2 * Math.PI * second);
   }
 
-  function rookieRoleMultiplier(player, scenario) {
-    return 1;
-  }
-
   function injuryDuration(meanDuration, key) {
     const mean = Math.max(1, Number(meanDuration || 1));
     const success = 1 / mean;
@@ -258,13 +254,12 @@
       const logSigma = Math.sqrt(Math.log(1 + positionError ** 2));
       const values = new Float64Array(weeks * simulations);
       for (let scenario = 0; scenario < simulations; scenario += 1) {
-        const roleMultiplier = rookieRoleMultiplier(player, scenario);
         for (let week = 1; week <= weeks; week += 1) {
           const game = games.get(week);
           const index = scenario * weeks + week - 1;
           if (!game || !availability[index]) continue;
           if (week === reportWeek && hashUniform(`${player.id}-${scenario}-current-injury`) < currentProbability) continue;
-          const mean = Math.max(0, gamePointsFor(game)) * roleMultiplier * healthyScale;
+          const mean = Math.max(0, gamePointsFor(game)) * healthyScale;
           const noise = Math.exp(logSigma * standardNormal(`${player.id}-${scenario}-${week}`) - 0.5 * logSigma ** 2);
           values[index] = mean * noise;
         }

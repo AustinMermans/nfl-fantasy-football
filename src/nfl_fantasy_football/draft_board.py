@@ -371,6 +371,7 @@ def export_preseason_board(
         "rookie_cohort_effective_n",
         "current_injury_feed",
         "preseason_projection",
+        "preseason_projection_source",
         "current_games_played",
         "future_games",
         "inseason_component_weight",
@@ -420,6 +421,9 @@ def export_preseason_board(
         )
         player["inseasonComponentWeight"] = _number_or(
             role.get("inseason_component_weight"), 0.0
+        )
+        player["projectionCenterSource"] = _text(
+            role.get("preseason_projection_source")
         )
         rookie_range = pd.notna(role.get("rookie_p50"))
         player["projectionRange"] = {

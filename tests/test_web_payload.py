@@ -23,6 +23,12 @@ def test_preseason_payload_preserves_unconditional_ros_contract() -> None:
         assert "baselineDuration" in player["injuryRisk"]
         assert "reportWeek" in player["injury"]
         assert player["projectionRange"]["decisionUse"] is False
+        assert player["inseasonComponentWeight"] == 0.0
+        assert player["projectionCenterSource"] in {
+            "season ensemble",
+            "current role-prior fallback",
+            "rookie analog prior",
+        }
 
 
 def test_live_components_are_labeled_as_unreconciled_diagnostics() -> None:

@@ -21,8 +21,6 @@ CURRENT_INJURY_PROBABILITY = {
 def inseason_component_weight(
     position: str,
     games_played: float,
-    *,
-    rookie: bool = False,
 ) -> float:
     """Increase current-form weight as within-season evidence accumulates."""
     prior_games = POSITION_UPDATE_PRIOR_GAMES.get(position, 8.0)
@@ -38,17 +36,16 @@ def blend_remaining_projection(
     remaining_games: int,
     games_played: float,
     position: str,
-    rookie: bool = False,
 ) -> tuple[float, float]:
     """Blend a frozen Week-0 prior with the current future-game forecast."""
     if remaining_games <= 0:
-        return 0.0, inseason_component_weight(position, games_played, rookie=rookie)
+        return 0.0, inseason_component_weight(position, games_played)
     prior_remaining = (
         max(float(preseason_full_season), 0.0)
         * float(remaining_games)
         / REGULAR_SEASON_GAMES
     )
-    weight = inseason_component_weight(position, games_played, rookie=rookie)
+    weight = inseason_component_weight(position, games_played)
     blended = (1.0 - weight) * prior_remaining + weight * max(
         float(weekly_model_remaining), 0.0
     )
