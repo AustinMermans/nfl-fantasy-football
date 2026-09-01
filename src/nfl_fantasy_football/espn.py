@@ -37,11 +37,11 @@ def parse_espn_market(payload: dict[str, object], *, season: int) -> list[dict[s
             ),
             None,
         )
-        ppr_points = projection.get("appliedTotal") if projection else None
+        applied_points = projection.get("appliedTotal") if projection else None
         receptions = (projection.get("stats", {}) or {}).get(ESPN_RECEPTIONS_STAT, 0.0) if projection else None
         half_ppr_points = (
-            float(ppr_points) + 0.5 * float(receptions or 0.0)
-            if ppr_points is not None
+            float(applied_points) + 0.5 * float(receptions or 0.0)
+            if applied_points is not None
             else None
         )
         ranks_present = [float(value) for value in (standard_rank, ppr_rank) if value]
@@ -99,6 +99,10 @@ def fetch_espn_market(season: int) -> dict[str, object]:
         "season": season,
         "source": "ESPN Fantasy public player pool",
         "marketModel": "70% ESPN ADP + 30% midpoint of Standard/PPR rank",
+        "projectionScoringBasis": (
+            "ESPN appliedTotal treated as standard scoring; half-PPR adds "
+            "0.5 points per reception"
+        ),
         "players": parse_espn_market(raw, season=season),
     }
 

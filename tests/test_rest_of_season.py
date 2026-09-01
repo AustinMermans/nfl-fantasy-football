@@ -6,6 +6,7 @@ from nfl_fantasy_football.rest_of_season import (
     availability_adjusted_projection,
     blend_remaining_projection,
     inseason_component_weight,
+    unconditional_projection_with_availability,
 )
 
 
@@ -55,6 +56,20 @@ def test_availability_adjustment_includes_current_injury_status() -> None:
     assert out[0] < healthy[0]
     assert out[1] < healthy[1]
     assert out[2] > healthy[2]
+
+
+def test_unconditional_projection_is_not_discounted_again_for_availability() -> None:
+    points, expected_games, expected_missed = unconditional_projection_with_availability(
+        200.0,
+        remaining_games=17,
+        weekly_hazard=0.08,
+        mean_duration=3.0,
+        current_status="Questionable",
+    )
+
+    assert points == 200.0
+    assert expected_games < 17
+    assert expected_missed > 0
 
 
 def test_completed_game_waits_for_player_stats_before_leaving_schedule() -> None:

@@ -353,6 +353,16 @@ def fantasy_forecasts(
     return output
 
 
+def apply_point_calibration(
+    fantasy: pd.DataFrame, role_audit: pd.DataFrame
+) -> pd.DataFrame:
+    """Calibrate fantasy-point means without changing the underlying stat line."""
+    scale = role_audit.set_index("player_id")["point_calibration_scale"]
+    output = fantasy.copy()
+    output["predicted_fantasy_points"] *= output["player_id"].map(scale).fillna(1.0)
+    return output
+
+
 def apply_current_role_adjustments(
     components: pd.DataFrame,
     future_features: pd.DataFrame,
@@ -463,15 +473,11 @@ def apply_current_role_adjustments(
     adjustments.loc[~rookie & reserve & above_role, "adjustment_reason"] = (
         "reserve-role cap"
     )
-    adjustments["role_scale"] = (
+    adjustments["point_calibration_scale"] = (
         adjustments["adjusted_points"]
         / adjustments["predicted_fantasy_points"].clip(lower=1.0)
     )
-    scale = adjustments.set_index("player_id")["role_scale"]
-    adjusted = components.copy()
-    adjusted["predicted"] = adjusted["predicted"] * adjusted["player_id"].map(
-        scale
-    ).fillna(1.0)
+    adjustments["role_scale"] = adjustments["point_calibration_scale"]
     audit = adjustments[
         [
             "player_id",
@@ -487,6 +493,7 @@ def apply_current_role_adjustments(
             "future_games",
             "current_games_played",
             "inseason_component_weight",
+            "point_calibration_scale",
             "role_scale",
             "adjustment_reason",
             "rookie_p10",
@@ -497,7 +504,7 @@ def apply_current_role_adjustments(
             "rookie_role_center",
         ]
     ].sort_values(["position", "depth_rank", "player_name"])
-    return adjusted, audit
+    return components.copy(), audit
 
 
 def build_preseason_forecasts(
@@ -566,6 +573,7 @@ def build_season_forecasts(
         values = role_audit.set_index("player_id")[column]
         future_features[column] = future_features["player_id"].map(values)
     fantasy = fantasy_forecasts(components, future_features)
+    fantasy = apply_point_calibration(fantasy, role_audit)
     role_audit.to_csv(
         PROJECT_ROOT / "results" / "current_role_adjustments.csv", index=False
     )

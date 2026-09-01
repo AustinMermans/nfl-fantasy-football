@@ -65,7 +65,7 @@ def unavailable_share(weekly_hazard: float, mean_duration: float) -> float:
 
 
 def availability_adjusted_projection(
-    projected_points: float,
+    conditional_points: float,
     *,
     remaining_games: int,
     weekly_hazard: float,
@@ -86,7 +86,26 @@ def availability_adjusted_projection(
         baseline_missed + (1.0 - baseline_share) * current_episode,
     )
     expected_games = float(remaining_games) - expected_missed
-    expected_points = max(float(projected_points), 0.0) * (
+    expected_points = max(float(conditional_points), 0.0) * (
         expected_games / float(remaining_games)
     )
     return float(expected_points), expected_games, expected_missed
+
+
+def unconditional_projection_with_availability(
+    projected_points: float,
+    *,
+    remaining_games: int,
+    weekly_hazard: float,
+    mean_duration: float,
+    current_status: str | None = None,
+) -> tuple[float, float, float]:
+    """Keep an unconditional point mean while reporting availability diagnostics."""
+    _, expected_games, expected_missed = availability_adjusted_projection(
+        projected_points,
+        remaining_games=remaining_games,
+        weekly_hazard=weekly_hazard,
+        mean_duration=mean_duration,
+        current_status=current_status,
+    )
+    return max(float(projected_points), 0.0), expected_games, expected_missed

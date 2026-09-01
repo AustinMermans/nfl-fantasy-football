@@ -1,4 +1,4 @@
-from nfl_fantasy_football.espn import parse_espn_market
+from nfl_fantasy_football.espn import fetch_espn_market, parse_espn_market
 
 
 def test_parse_espn_market_separates_adp_and_projection() -> None:
@@ -36,3 +36,19 @@ def test_parse_espn_market_separates_adp_and_projection() -> None:
     assert row["halfPprRank"] == 17.0
     assert row["marketCenter"] == 17.0
     assert row["espnHalfPprPoints"] == 280.0
+
+
+def test_fetch_espn_market_declares_applied_total_basis(monkeypatch) -> None:
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+    monkeypatch.setattr("nfl_fantasy_football.espn.urlopen", lambda *args, **kwargs: Response())
+    monkeypatch.setattr("nfl_fantasy_football.espn.json.load", lambda response: {"players": []})
+
+    result = fetch_espn_market(2026)
+
+    assert "standard scoring" in result["projectionScoringBasis"]

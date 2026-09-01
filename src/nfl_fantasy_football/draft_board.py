@@ -11,7 +11,7 @@ from .draft_probability import WEEKLY_OUTCOME_PARAMETERS, estimate_weekly_outcom
 from .draft_strategy import format_draft_metrics
 from .fantasy import DEPLOYMENT_SELECTION, _selected_long
 from .injury import FALLBACK_DURATION, FALLBACK_HAZARD
-from .rest_of_season import availability_adjusted_projection
+from .rest_of_season import unconditional_projection_with_availability
 from .scoring import load_scoring, score_components
 
 
@@ -458,7 +458,7 @@ def export_preseason_board(
             "weight": _number_or(role.get("weight"), 0.0, 1),
             "bmi": _number_or(role.get("bmi"), 0.0, 1),
         }
-        expected_points, expected_games, expected_missed = availability_adjusted_projection(
+        expected_points, expected_games, expected_missed = unconditional_projection_with_availability(
             player["projectedPoints"],
             remaining_games=player["projectedGames"],
             weekly_hazard=player["injuryRisk"]["weeklyHazard"],
@@ -472,6 +472,7 @@ def export_preseason_board(
         player["restOfSeasonPoints"] = player["projectedPoints"]
         player["restOfSeasonExpectedPoints"] = round(expected_points, 1)
         player["restOfSeasonExpectedGames"] = round(expected_games, 2)
+        player["availabilityAdjustmentApplied"] = False
         range_scale = expected_points / max(player["draftProjectedPoints"], 1e-9)
         player["restOfSeasonRange"] = {
             "p10": round(player["projectionRange"]["p10"] * range_scale, 1),
