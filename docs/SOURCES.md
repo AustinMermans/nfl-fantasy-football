@@ -13,7 +13,11 @@
   draft endpoints. The board also reads the current projection feed's
   `adp_half_ppr` field as a failure-tolerant live cross-check; that projection
   endpoint is not part of Sleeper's documented historical contract and is not
-  treated as a complete league-size series.
+  treated as a complete league-size series. The documented API returns drafts
+  for a known user or league and complete picks for a known draft, but provides
+  no global league enumeration endpoint. Historical sequence collection is
+  therefore rate-limited and seed-based. Stored research snapshots omit user
+  IDs, usernames, draft names, and league names.
 - [MyFantasyLeague developer API](https://myfantasyleague.wordpress.com/2008/08/06/developer-api/):
   historical AUG15 Standard/PPR ADP by season and league size. The draft-policy
   backtest interpolates half PPR and caches the exact raw responses under

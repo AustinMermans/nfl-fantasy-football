@@ -177,6 +177,38 @@ These papers motivate an eventual belief-state stochastic program. They do not
 validate this implementation. The production rule is deliberately the smallest
 intervention supported by this repository's historical evidence.
 
+## Empirical opponent-choice model
+
+The research CLI can collect completed Sleeper redraft snake sequences from an
+explicit user, league, or draft seed. Requests are kept below Sleeper's stated
+rate guideline. Persisted snapshots exclude user IDs, usernames, league names,
+and draft names. D/ST picks are retained as sequence events so snake timing is
+correct, but D/ST is excluded from the offensive-player choice target.
+
+For a manager state `s`, available choice set `C`, and candidate player `i`, the
+model is:
+
+`P(i | C, s) = exp(beta' x(i,s)) / sum[j in C] exp(beta' x(j,s))`.
+
+`x(i,s)` contains market rank, player position, whether the manager still needs
+that starter position, the manager's current count at the position, the last
+six picks at that position, draft progress, and the fraction of managers before
+the next snake turn who currently need that position. The ADP comparator uses
+the same sets and only the market-rank term.
+
+Evaluation is expanding in draft start time within an exact season, team count,
+scoring, rounds, lineup, bench, and D/ST format. Each fold derives its ADP proxy
+and coefficients from earlier drafts only. Later-draft players absent from the
+training market are excluded and reported through known-pick coverage rather
+than assigned hindsight ranks. The risk set is capped at the top 50 available
+training-market players plus the observed choice during fitting.
+
+The report includes multinomial log loss and Brier score, top-1/top-5 accuracy,
+ICI, E50/E90/Emax, and logistic calibration intercept/slope. These are one-step
+choice metrics. Survival-to-next-turn must subsequently be evaluated by rolling
+the fitted probabilities through the draft simulator without conditioning on
+future realized picks.
+
 ## Expert review consensus
 
 Five independent reviews covered rookie forecasting, football roles, Bayesian
@@ -198,9 +230,12 @@ Their convergent recommendations are:
 - Continue timestamped ESPN and Sleeper snapshots by scoring, retrieval time,
   and response hash.
 - Retain MyFantasyLeague league-size ADP snapshots for historical policy tests.
-- Store exact sequences only from sources and leagues whose access allows it.
-- Fit a pick-level Plackett-Luce or hazard model with ADP distribution, roster
-  need, position runs, format, round, and manager effects.
+- Collect PII-minimized Sleeper sequences from explicit public user, league, or
+  draft seeds; Sleeper exposes no global league-list endpoint.
+- Fit and evaluate the implemented pick-level Plackett-Luce model with ADP,
+  roster need, position runs, format, snake geometry, and intervening-manager
+  demand. Current coefficients remain research-only until a sufficiently large
+  seed corpus exists.
 - Replace the simulated survival prior only after rolling-origin calibration.
 
 ## Validation gates

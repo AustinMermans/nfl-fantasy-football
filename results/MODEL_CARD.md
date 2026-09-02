@@ -300,9 +300,12 @@ cross-fold grouped improvement exceeds the screened subset.
   absent. The injury approximation has not yet passed a rolling-origin
   calibration study and should not be interpreted as a medical forecast.
 - The policy test uses aggregate MFL ADP rather than raw, timestamped manager
-  sequences. Opponent deviations are simulated, waiver/trade and playoff
-  outcomes are absent, and several cross-size estimates remain imprecise. The
-  capped-ADP edge does not establish universal optimality.
+  sequences. A PII-minimized Sleeper collector and expanding-time Plackett-Luce
+  evaluation harness now exist, but no seeded sequence corpus is checked into
+  the repository and no fitted opponent-aware coefficients are deployed.
+  Opponent deviations are still simulated, waiver/trade and playoff outcomes
+  are absent, and several cross-size estimates remain imprecise. The capped-ADP
+  edge does not establish universal optimality.
 - The ROS empirical-Bayes weights are declared priors, not yet selected in a
   nested historical rest-of-season backtest. The next research gate is
   rolling-origin error and calibration by position and week of season.

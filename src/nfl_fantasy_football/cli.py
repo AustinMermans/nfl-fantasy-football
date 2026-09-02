@@ -41,9 +41,11 @@ from .market import (
     polymarket_player_market_catalog,
 )
 from .participation import summarize_participation, walk_forward_participation
+from .opponent_choice import chronological_choice_backtest
 from .production import build_season_forecasts, write_production_artifacts
 from .preseason import walk_forward_preseason_backtest
 from .sleeper import write_sleeper_market
+from .sleeper_drafts import collect_sleeper_draft_corpus
 
 
 DEFAULT_TARGETS = ("passing_yards", "rushing_yards", "receiving_yards")
@@ -598,6 +600,63 @@ def _sleeper_market(args: argparse.Namespace) -> None:
     print(f"wrote Sleeper market cross-check to {destination}")
 
 
+def _sleeper_draft_corpus(args: argparse.Namespace) -> None:
+    if not any((args.user_ids, args.league_ids, args.draft_ids)):
+        raise ValueError("provide at least one --user-id, --league-id, or --draft-id")
+    destination = Path(args.destination) if args.destination else None
+    picks, manifest = collect_sleeper_draft_corpus(
+        seasons=args.seasons,
+        user_ids=args.user_ids,
+        league_ids=args.league_ids,
+        draft_ids=args.draft_ids,
+        team_sizes=args.team_sizes,
+        minimum_rounds=args.minimum_rounds,
+        maximum_drafts=args.maximum_drafts,
+        destination=destination,
+    )
+    print(f"wrote normalized Sleeper picks to {picks}")
+    print(f"wrote PII-minimized corpus manifest to {manifest}")
+
+
+def _opponent_choice_backtest(args: argparse.Namespace) -> None:
+    source = Path(args.picks)
+    picks = pd.read_parquet(source)
+    results, coefficients = chronological_choice_backtest(
+        picks,
+        minimum_train_drafts=args.minimum_train_drafts,
+        test_drafts_per_fold=args.test_drafts_per_fold,
+        choice_set_size=args.choice_set_size,
+        l2=args.l2,
+    )
+    if results.empty:
+        raise ValueError(
+            "no format has enough chronological drafts for the requested folds"
+        )
+    output = PROJECT_ROOT / "results"
+    suffix = f"_{args.output_suffix}" if args.output_suffix else ""
+    result_path = output / f"opponent_choice_backtest{suffix}.csv"
+    coefficient_path = output / f"opponent_choice_coefficients{suffix}.csv"
+    results.to_csv(result_path, index=False)
+    coefficients.to_csv(coefficient_path, index=False)
+    comparison = results.groupby("strategy", as_index=False).agg(
+        folds=("fold", "count"),
+        known_pick_coverage=("known_pick_coverage", "mean"),
+        log_loss=("log_loss", "mean"),
+        multiclass_brier=("multiclass_brier", "mean"),
+        top1_accuracy=("top1_accuracy", "mean"),
+        top5_accuracy=("top5_accuracy", "mean"),
+        ici=("ici", "mean"),
+        e50=("e50", "mean"),
+        e90=("e90", "mean"),
+        emax=("emax", "mean"),
+        calibration_intercept=("calibration_intercept", "mean"),
+        calibration_slope=("calibration_slope", "mean"),
+    )
+    print(comparison.round(4).to_string(index=False))
+    print(f"wrote opponent choice results to {result_path}")
+    print(f"wrote opponent choice coefficients to {coefficient_path}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="nfl-fantasy")
     commands = parser.add_subparsers(required=True)
@@ -733,6 +792,35 @@ def build_parser() -> argparse.ArgumentParser:
     sleeper_market = commands.add_parser("sleeper-market")
     sleeper_market.add_argument("--season", type=int, required=True)
     sleeper_market.set_defaults(handler=_sleeper_market)
+    sleeper_corpus = commands.add_parser("sleeper-draft-corpus")
+    sleeper_corpus.add_argument("--seasons", nargs="+", type=int, required=True)
+    sleeper_corpus.add_argument("--user-id", dest="user_ids", action="append", default=[])
+    sleeper_corpus.add_argument(
+        "--league-id", dest="league_ids", action="append", default=[]
+    )
+    sleeper_corpus.add_argument(
+        "--draft-id", dest="draft_ids", action="append", default=[]
+    )
+    sleeper_corpus.add_argument(
+        "--team-sizes", nargs="+", type=int, default=[8, 10, 12, 14]
+    )
+    sleeper_corpus.add_argument("--minimum-rounds", type=int, default=12)
+    sleeper_corpus.add_argument("--maximum-drafts", type=int, default=500)
+    sleeper_corpus.add_argument("--destination")
+    sleeper_corpus.set_defaults(handler=_sleeper_draft_corpus)
+    choice_backtest = commands.add_parser("opponent-choice-backtest")
+    choice_backtest.add_argument(
+        "--picks",
+        default=str(
+            PROJECT_ROOT / "data" / "processed" / "sleeper_draft_picks.parquet"
+        ),
+    )
+    choice_backtest.add_argument("--minimum-train-drafts", type=int, default=20)
+    choice_backtest.add_argument("--test-drafts-per-fold", type=int, default=10)
+    choice_backtest.add_argument("--choice-set-size", type=int, default=50)
+    choice_backtest.add_argument("--l2", type=float, default=1.0)
+    choice_backtest.add_argument("--output-suffix", default="")
+    choice_backtest.set_defaults(handler=_opponent_choice_backtest)
     return parser
 
 

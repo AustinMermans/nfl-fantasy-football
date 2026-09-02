@@ -41,12 +41,30 @@ nfl-fantasy season-forecast --season 2026 --refresh
 nfl-fantasy preseason-backtest
 nfl-fantasy espn-market --season 2026
 nfl-fantasy sleeper-market --season 2026
+nfl-fantasy sleeper-draft-corpus --seasons 2024 2025 --user-id YOUR_SLEEPER_USER_ID
+nfl-fantasy opponent-choice-backtest
 python -m pytest
 ```
 
 Raw nflverse assets are cached under `data/raw/` and ignored by Git. Generated
 development reports are written under `results/`. Do not use
 `--include-holdout` during feature or model iteration.
+
+The Sleeper draft-corpus command accepts explicit `--user-id`, `--league-id`,
+or `--draft-id` seeds. It retains completed redraft snake drafts, rate-limits
+requests, and writes content-addressed source snapshots plus a normalized pick
+table. User IDs, usernames, draft names, and league names are not persisted.
+Sleeper does not publish a global public-league enumeration endpoint, so corpus
+discovery is deliberately seed-based.
+
+`opponent-choice-backtest` fits expanding-time Plackett-Luce models to those
+sequences. The opponent-aware candidate adds manager roster need, current
+position count, recent position flow, snake geometry, and the starter needs of
+managers before the next turn to an ADP-only utility. Both models use identical
+risk sets. Reports include choice log loss, multiclass Brier score, top-1/top-5
+accuracy, ICI, E50/E90/Emax, and calibration intercept/slope. This research
+model cannot change the live draft policy until it improves held-out choice
+calibration and the downstream draft simulation versus capped ADP.
 
 ## Player markets
 
