@@ -43,7 +43,9 @@ nfl-fantasy espn-market --season 2026
 nfl-fantasy sleeper-market --season 2026
 nfl-fantasy sleeper-draft-corpus --seasons 2020 2021 2022 2023 2024 2025 \
   --draft-id PUBLIC_SEED --participant-crawl-depth 2 --maximum-users 500
-nfl-fantasy opponent-choice-backtest
+nfl-fantasy sleeper-draft-merge --inputs FIRST.parquet SECOND.parquet \
+  --destination data/processed/sleeper_draft_picks.parquet
+nfl-fantasy opponent-choice-backtest --stratification exact
 python -m pytest
 ```
 
@@ -62,14 +64,32 @@ names are not persisted.
 Sleeper does not publish a global public-league enumeration endpoint, so corpus
 discovery is deliberately seed-based.
 
+Every collection and merge also writes `*.formats.csv` and
+`*.formats_by_season.csv`. An exact format is team count, draft length, Sleeper
+scoring family, every offensive starter slot, FLEX, kicker, D/ST, and bench
+depth. The merge command deduplicates draft/pick keys across independently
+discovered seed networks and rejects conflicting duplicates.
+The draft endpoint exposes only the coarse Standard/Half-PPR/PPR family, so
+custom scoring coefficients are not part of this key; the reports call this a
+canonical exact format rather than claiming every league rule is identical.
+
 `opponent-choice-backtest` fits expanding-time Plackett-Luce ablations to those
-sequences. It isolates position baselines, manager roster state, recent
-position flow, next-turn demand, and their combination against ADP on identical
-risk sets. Reports include choice log loss, multiclass Brier score, top-1/top-5
-accuracy, ICI, E50/E90/Emax, calibration intercept/slope, and Holm-adjusted
-paired draft-level tests. This research model cannot change the live draft
-policy until it also improves the downstream draft simulation versus capped
-ADP.
+sequences. Exact roster/scoring-type stratification is the default; `--stratification
+pooled` is retained as a sensitivity analysis. The test isolates position
+baselines, manager roster state, recent position flow, next-turn demand, and
+their combination against ADP on identical risk sets. Reports include choice
+log loss, multiclass Brier score, top-1/top-5 accuracy, ICI, E50/E90/Emax,
+calibration intercept/slope, and Holm-adjusted paired draft-level tests. This
+research model cannot change the live draft policy until it also improves the
+downstream draft simulation versus capped ADP.
+
+The September 2026 research corpus contains 17,933 deduplicated eligible drafts
+and 3,366,535 picks. It has 77 exact cross-season formats and 52 season-specific
+exact formats with at least 50 drafts. At that gate, 2,375 later drafts are
+available for expanding-time evaluation. Roster state improves choice log loss
+in every qualifying format cell; adding the needs and locations of managers
+before the next snake turn improves 48 of 52 cells. The recent-run term is less
+stable and is not promoted.
 
 ## Player markets
 

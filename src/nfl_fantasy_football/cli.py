@@ -49,6 +49,7 @@ from .production import build_season_forecasts, write_production_artifacts
 from .preseason import walk_forward_preseason_backtest
 from .sleeper import write_sleeper_market
 from .sleeper_drafts import collect_sleeper_draft_corpus
+from .sleeper_drafts import merge_sleeper_draft_corpora
 
 
 DEFAULT_TARGETS = ("passing_yards", "rushing_yards", "receiving_yards")
@@ -624,6 +625,19 @@ def _sleeper_draft_corpus(args: argparse.Namespace) -> None:
     print(f"wrote PII-minimized corpus manifest to {manifest}")
 
 
+def _sleeper_draft_merge(args: argparse.Namespace) -> None:
+    destination = Path(args.destination)
+    output, coverage = merge_sleeper_draft_corpora(
+        [Path(path) for path in args.inputs], destination=destination
+    )
+    picks = pd.read_parquet(output)
+    print(
+        f"wrote {picks['draft_id'].nunique():,} unique drafts and "
+        f"{len(picks):,} picks to {output}"
+    )
+    print(f"wrote exact-format coverage to {coverage}")
+
+
 def _opponent_choice_backtest(args: argparse.Namespace) -> None:
     source = Path(args.picks)
     picks = pd.read_parquet(source)
@@ -633,6 +647,7 @@ def _opponent_choice_backtest(args: argparse.Namespace) -> None:
         test_drafts_per_fold=args.test_drafts_per_fold,
         choice_set_size=args.choice_set_size,
         l2=args.l2,
+        exact_formats=args.stratification == "exact",
     )
     if results.empty:
         raise ValueError(
@@ -650,7 +665,12 @@ def _opponent_choice_backtest(args: argparse.Namespace) -> None:
     paired_comparison = compare_choice_models(draft_metrics)
     paired_comparison.to_csv(comparison_path, index=False)
     incremental_comparisons: list[tuple[str, pd.DataFrame, Path]] = []
-    for control in ("position_baseline", "roster_aware", "roster_plus_run"):
+    for control in (
+        "position_baseline",
+        "roster_aware",
+        "roster_plus_run",
+        "roster_plus_next_turn",
+    ):
         if control not in set(draft_metrics["strategy"]):
             continue
         incremental = compare_choice_models(draft_metrics, control=control)
@@ -824,7 +844,9 @@ def build_parser() -> argparse.ArgumentParser:
     sleeper_market.set_defaults(handler=_sleeper_market)
     sleeper_corpus = commands.add_parser("sleeper-draft-corpus")
     sleeper_corpus.add_argument("--seasons", nargs="+", type=int, required=True)
-    sleeper_corpus.add_argument("--user-id", dest="user_ids", action="append", default=[])
+    sleeper_corpus.add_argument(
+        "--user-id", dest="user_ids", action="append", default=[]
+    )
     sleeper_corpus.add_argument(
         "--league-id", dest="league_ids", action="append", default=[]
     )
@@ -841,6 +863,10 @@ def build_parser() -> argparse.ArgumentParser:
     sleeper_corpus.add_argument("--maximum-workers", type=int, default=8)
     sleeper_corpus.add_argument("--destination")
     sleeper_corpus.set_defaults(handler=_sleeper_draft_corpus)
+    sleeper_merge = commands.add_parser("sleeper-draft-merge")
+    sleeper_merge.add_argument("--inputs", nargs="+", required=True)
+    sleeper_merge.add_argument("--destination", required=True)
+    sleeper_merge.set_defaults(handler=_sleeper_draft_merge)
     choice_backtest = commands.add_parser("opponent-choice-backtest")
     choice_backtest.add_argument(
         "--picks",
@@ -852,6 +878,9 @@ def build_parser() -> argparse.ArgumentParser:
     choice_backtest.add_argument("--test-drafts-per-fold", type=int, default=10)
     choice_backtest.add_argument("--choice-set-size", type=int, default=50)
     choice_backtest.add_argument("--l2", type=float, default=1.0)
+    choice_backtest.add_argument(
+        "--stratification", choices=["exact", "pooled"], default="exact"
+    )
     choice_backtest.add_argument("--output-suffix", default="")
     choice_backtest.set_defaults(handler=_opponent_choice_backtest)
     return parser

@@ -1,4 +1,5 @@
 from io import BytesIO
+from urllib.error import HTTPError
 
 import pandas as pd
 
@@ -7,6 +8,8 @@ import nfl_fantasy_football.sleeper_drafts as sleeper_drafts
 from nfl_fantasy_football.sleeper_drafts import (
     collect_sleeper_draft_corpus,
     eligible_redraft_snake,
+    exact_format_coverage,
+    merge_sleeper_draft_corpora,
     normalize_sleeper_draft,
     SleeperAPIClient,
 )
@@ -83,12 +86,12 @@ def test_eligible_redraft_snake_rejects_keeper_and_dynasty_shapes() -> None:
         **draft,
         "metadata": {"name": "Home League", "scoring_type": "dynasty_ppr"},
     }
-    assert not eligible_redraft_snake(
-        labeled_dynasty, seasons={2025}, team_sizes={10}
-    )
+    assert not eligible_redraft_snake(labeled_dynasty, seasons={2025}, team_sizes={10})
 
 
-def test_normalize_sleeper_draft_omits_user_identity_and_retains_defense_timing() -> None:
+def test_normalize_sleeper_draft_omits_user_identity_and_retains_defense_timing() -> (
+    None
+):
     picks = [
         {
             "player_id": "100",
@@ -125,7 +128,9 @@ def test_normalize_sleeper_draft_omits_user_identity_and_retains_defense_timing(
     assert normalized.loc[0, "slots_flex"] == 2
 
 
-def test_corpus_collector_writes_sanitized_content_addressed_snapshots(tmp_path) -> None:
+def test_corpus_collector_writes_sanitized_content_addressed_snapshots(
+    tmp_path,
+) -> None:
     draft = _draft()
     draft["settings"]["rounds"] = 12
     picks = [
@@ -162,7 +167,9 @@ def test_corpus_collector_writes_sanitized_content_addressed_snapshots(tmp_path)
     assert output.exists()
     assert manifest.exists()
     assert len(list((tmp_path / "raw").glob("*.json"))) == 1
-    combined_text = manifest.read_text() + next((tmp_path / "raw").glob("*.json")).read_text()
+    combined_text = (
+        manifest.read_text() + next((tmp_path / "raw").glob("*.json")).read_text()
+    )
     assert "private-user" not in combined_text
     assert "draft-1" not in combined_text
     assert "league-1" not in combined_text
@@ -214,3 +221,90 @@ def test_corpus_collector_can_discover_participant_drafts_without_saving_ids(
 
     assert pd.read_parquet(output)["draft_id"].nunique() == 2
     assert "private-user" not in manifest.read_text()
+
+
+def test_corpus_collector_skips_unavailable_participant(tmp_path) -> None:
+    seed = _draft()
+    seed["draft_order"] = {"deleted-user": 1}
+    picks = [
+        {
+            "player_id": str(index),
+            "roster_id": str(index % 10 + 1),
+            "round": index // 10 + 1,
+            "draft_slot": index % 10 + 1,
+            "pick_no": index + 1,
+            "metadata": {"position": ("QB", "RB", "WR", "TE", "K")[index % 5]},
+        }
+        for index in range(170)
+    ]
+
+    class FakeClient:
+        def get(self, path: str):
+            if path == "draft/draft-1":
+                return seed
+            if path == "draft/draft-1/picks":
+                return picks
+            raise HTTPError(path, 404, "missing", {}, None)
+
+    output, manifest = collect_sleeper_draft_corpus(
+        seasons=[2025],
+        draft_ids=["draft-1"],
+        participant_crawl_depth=1,
+        destination=tmp_path / "picks.parquet",
+        raw_dir=tmp_path / "raw",
+        client=FakeClient(),
+    )
+
+    assert pd.read_parquet(output)["draft_id"].nunique() == 1
+    assert '"unresolved_participant_requests": 1' in manifest.read_text()
+
+
+def test_exact_format_coverage_and_merge_deduplicate_drafts(tmp_path) -> None:
+    first = normalize_sleeper_draft(
+        _draft(),
+        [
+            {
+                "player_id": "100",
+                "roster_id": 1,
+                "round": 1,
+                "draft_slot": 1,
+                "pick_no": 1,
+                "metadata": {"position": "RB"},
+            }
+        ],
+    )
+    second_draft = _draft()
+    second_draft["draft_id"] = "draft-2"
+    second = normalize_sleeper_draft(
+        second_draft,
+        [
+            {
+                "player_id": "101",
+                "roster_id": 1,
+                "round": 1,
+                "draft_slot": 1,
+                "pick_no": 1,
+                "metadata": {"position": "RB"},
+            }
+        ],
+    )
+    source_a = tmp_path / "a.parquet"
+    source_b = tmp_path / "b.parquet"
+    first.to_parquet(source_a, index=False)
+    pd.concat([first, second]).to_parquet(source_b, index=False)
+
+    output, coverage_path = merge_sleeper_draft_corpora(
+        [source_a, source_b], destination=tmp_path / "merged.parquet"
+    )
+
+    merged = pd.read_parquet(output)
+    coverage = exact_format_coverage(merged)
+    season_coverage = exact_format_coverage(merged, by_season=True)
+    assert merged["draft_id"].nunique() == 2
+    assert len(merged) == 2
+    assert coverage.loc[0, "drafts"] == 2
+    assert season_coverage.loc[0, "drafts"] == 2
+    assert coverage_path.exists()
+    manifest = output.with_suffix(".manifest.json").read_text()
+    assert '"drafts": 2' in manifest
+    assert '"source_corpora": 2' in manifest

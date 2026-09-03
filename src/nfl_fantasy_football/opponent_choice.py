@@ -9,6 +9,8 @@ from scipy.optimize import minimize
 from scipy.stats import t as student_t
 from scipy.stats import ttest_1samp
 
+from .sleeper_drafts import EXACT_FORMAT_COLUMNS
+
 
 POSITIONS = ("QB", "RB", "WR", "TE", "K")
 FEATURE_NAMES = (
@@ -35,11 +37,12 @@ ABLATION_FEATURE_SETS = {
     "roster_plus_next_turn": (0, 1, 2, 4, 5, 6, 7, 8, 9, 10, 11),
     "opponent_aware": tuple(range(len(FEATURE_NAMES))),
 }
-STRATUM_COLUMNS = (
+POOLED_STRATUM_COLUMNS = (
     "season",
     "teams",
     "scoring_type",
 )
+EXACT_STRATUM_COLUMNS = ("season", *EXACT_FORMAT_COLUMNS)
 
 
 @dataclass(frozen=True)
@@ -307,7 +310,9 @@ def score_choice_log_loss(
     losses = []
     for observation in observations:
         probabilities = model.probabilities(observation.features[:, indices])
-        losses.append(-np.log(max(float(probabilities[observation.chosen_index]), 1e-12)))
+        losses.append(
+            -np.log(max(float(probabilities[observation.chosen_index]), 1e-12))
+        )
     return float(np.mean(losses)) if losses else float("nan")
 
 
@@ -415,12 +420,16 @@ def _chronological_choice_backtest(
     choice_set_size: int = 50,
     l2: float = 1.0,
     feature_sets: Mapping[str, Sequence[int]],
+    stratum_columns: Sequence[str] = POOLED_STRATUM_COLUMNS,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Expanding-time comparison of opponent-aware choice and ADP-only models."""
     rows: list[dict[str, object]] = []
     coefficient_rows: list[dict[str, object]] = []
     draft_rows: list[dict[str, object]] = []
-    for stratum_key, group in picks.groupby(list(STRATUM_COLUMNS), dropna=False):
+    for stratum_key, group in picks.groupby(list(stratum_columns), dropna=False):
+        if not isinstance(stratum_key, tuple):
+            stratum_key = (stratum_key,)
+        stratum = dict(zip(stratum_columns, stratum_key))
         drafts = (
             group.groupby("draft_id")["start_time"].min().sort_values().index.tolist()
         )
@@ -469,7 +478,7 @@ def _chronological_choice_backtest(
                 )
                 rows.append(
                     {
-                        **dict(zip(STRATUM_COLUMNS, stratum_key)),
+                        **stratum,
                         "fold": len(drafts[:train_end]),
                         "train_drafts": train_end,
                         "test_drafts": len(test_ids),
@@ -481,7 +490,7 @@ def _chronological_choice_backtest(
                 )
                 coefficient_rows.extend(
                     {
-                        **dict(zip(STRATUM_COLUMNS, stratum_key)),
+                        **stratum,
                         "fold": len(drafts[:train_end]),
                         "strategy": strategy,
                         "feature": name,
@@ -495,7 +504,7 @@ def _chronological_choice_backtest(
                 for draft_id, observations in sorted(by_draft.items()):
                     draft_rows.append(
                         {
-                            **dict(zip(STRATUM_COLUMNS, stratum_key)),
+                            **stratum,
                             "fold": len(drafts[:train_end]),
                             "strategy": strategy,
                             "draft_id": draft_id,
@@ -521,6 +530,7 @@ def chronological_choice_backtest(
     test_drafts_per_fold: int = 10,
     choice_set_size: int = 50,
     l2: float = 1.0,
+    exact_formats: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     results, coefficients, _ = _chronological_choice_backtest(
         picks,
@@ -528,6 +538,9 @@ def chronological_choice_backtest(
         test_drafts_per_fold=test_drafts_per_fold,
         choice_set_size=choice_set_size,
         l2=l2,
+        stratum_columns=(
+            EXACT_STRATUM_COLUMNS if exact_formats else POOLED_STRATUM_COLUMNS
+        ),
         feature_sets={
             "adp_only": ABLATION_FEATURE_SETS["adp_only"],
             "opponent_aware": ABLATION_FEATURE_SETS["opponent_aware"],
@@ -543,6 +556,7 @@ def chronological_choice_ablation_backtest(
     test_drafts_per_fold: int = 10,
     choice_set_size: int = 50,
     l2: float = 1.0,
+    exact_formats: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     return _chronological_choice_backtest(
         picks,
@@ -550,6 +564,9 @@ def chronological_choice_ablation_backtest(
         test_drafts_per_fold=test_drafts_per_fold,
         choice_set_size=choice_set_size,
         l2=l2,
+        stratum_columns=(
+            EXACT_STRATUM_COLUMNS if exact_formats else POOLED_STRATUM_COLUMNS
+        ),
         feature_sets=ABLATION_FEATURE_SETS,
     )
 
@@ -560,7 +577,8 @@ def compare_choice_models(
     control: str = "adp_only",
 ) -> pd.DataFrame:
     """Paired draft-level log-loss comparisons with Holm correction."""
-    index = [*STRATUM_COLUMNS, "fold", "draft_id"]
+    metric_columns = {"strategy", "n", "log_loss"}
+    index = [column for column in draft_metrics.columns if column not in metric_columns]
     pivot = draft_metrics.pivot(index=index, columns="strategy", values="log_loss")
     if control not in pivot:
         raise ValueError(f"control strategy {control!r} is absent")
@@ -569,7 +587,9 @@ def compare_choice_models(
         paired = pivot[[control, strategy]].dropna()
         delta = paired[strategy] - paired[control]
         n = len(delta)
-        standard_error = float(delta.std(ddof=1) / np.sqrt(n)) if n > 1 else float("nan")
+        standard_error = (
+            float(delta.std(ddof=1) / np.sqrt(n)) if n > 1 else float("nan")
+        )
         critical = float(student_t.ppf(0.975, n - 1)) if n > 1 else float("nan")
         mean_delta = float(delta.mean()) if n else float("nan")
         if n > 1 and float(delta.std(ddof=1)) > 1e-12:

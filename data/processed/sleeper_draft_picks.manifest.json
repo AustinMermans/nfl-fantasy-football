@@ -1,0 +1,14 @@
+{
+  "coverage": {
+    "exact_formats": 1742,
+    "formats_with_at_least_50_drafts": 77,
+    "season_exact_formats": 3573,
+    "season_exact_formats_with_at_least_50_drafts": 52
+  },
+  "drafts": 17933,
+  "generated_at": "2026-09-03T03:58:07.958455+00:00",
+  "picks": 3366535,
+  "privacy": "user IDs, usernames, and league names are not retained",
+  "source": "merged normalized Sleeper API corpora",
+  "source_corpora": 3
+}

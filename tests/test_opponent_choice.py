@@ -121,6 +121,30 @@ def test_later_drafts_do_not_change_an_earlier_fold() -> None:
     )
 
 
+def test_exact_format_backtest_does_not_pool_different_bench_sizes() -> None:
+    corpus = _synthetic_draft_corpus(10)
+    corpus.loc[
+        corpus["draft_id"].isin([f"draft-{i}" for i in range(5, 10)]), "slots_bn"
+    ] = 1
+
+    pooled, _ = chronological_choice_backtest(
+        corpus,
+        minimum_train_drafts=4,
+        test_drafts_per_fold=2,
+        choice_set_size=8,
+    )
+    exact, _ = chronological_choice_backtest(
+        corpus,
+        minimum_train_drafts=4,
+        test_drafts_per_fold=2,
+        choice_set_size=8,
+        exact_formats=True,
+    )
+
+    assert pooled["test_drafts"].sum() > exact["test_drafts"].sum()
+    assert set(exact["slots_bn"]) == {0, 1}
+
+
 def test_chronological_backtest_keeps_partial_final_test_block() -> None:
     results, _ = chronological_choice_backtest(
         _synthetic_draft_corpus(5),

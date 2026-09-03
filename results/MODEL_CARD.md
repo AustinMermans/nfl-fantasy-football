@@ -299,19 +299,25 @@ cross-fold grouped improvement exceeds the screened subset.
   dependence, head-to-head win probability, and championship objectives remain
   absent. The injury approximation has not yet passed a rolling-origin
   calibration study and should not be interpreted as a medical forecast.
-- A local, Git-ignored Sleeper corpus now contains 2,327 structurally eligible
-  one-QB redraft drafts and 445,353 picks from public seeds after explicit
-  dynasty and 2QB formats were removed. Draft and league IDs are hashed and
-  user identity is not persisted. Expanding-time tests yielded 19 folds and
-  1,130 held-out drafts from 2020-2025 in 10- and 12-team PPR cells with limited
-  half-PPR support. Against position-adjusted right-censored ADP, manager roster
-  state reduced paired log loss from `3.5277` to `3.4546` (2.07%) and improved
-  every evaluated season/team/scoring cell. Recent position flow added 0.112%
-  beyond roster state, but the increment was nearly zero in 2025. Direct
-  next-turn-demand terms added nothing, and the full bundle was slightly worse
-  than roster plus run. No coefficients are yet deployed because one-step
-  choice accuracy has not been converted into a calibrated survival rollout or
-  downstream capped-ADP policy test; 8- and 14-team evidence remains thin.
+- A local, Git-ignored Sleeper corpus now contains 17,933 deduplicated,
+  structurally eligible one-QB redraft drafts and 3,366,535 picks from three
+  public-seed networks. Draft and league IDs are hashed and user identity is not
+  persisted. There are 77 cross-season exact formats and 52 season-specific
+  canonical exact formats with at least 50 drafts. The key matches roster shape
+  and coarse Sleeper scoring family, not every custom scoring coefficient.
+- Exact-format expanding-time Plackett-Luce ablations evaluate 2,375 held-out
+  drafts after at least 50 earlier identical drafts. Manager roster state
+  improves choice log loss by 1.91% versus position-adjusted, right-censored
+  ADP, improving all 52 cells. Intervening-manager need and snake location add
+  another 0.418%, improving 48 cells and every season. The smaller pooled test
+  had masked this signal.
+- Recent position flow adds 0.083% beyond roster state in aggregate but is
+  slightly harmful in 2023 and 2025. The full bundle's small incremental gain
+  over roster plus next-turn is likewise absent in those seasons. The candidate
+  opponent model therefore excludes a fixed run term. No coefficients are yet
+  deployed because one-step choice accuracy has not been converted into a
+  calibrated survival rollout or downstream capped-ADP policy test; 8- and
+  14-team exact-format evidence remains thin.
 - The ROS empirical-Bayes weights are declared priors, not yet selected in a
   nested historical rest-of-season backtest. The next research gate is
   rolling-origin error and calibration by position and week of season.

@@ -20,6 +20,19 @@ from .config import PROJECT_ROOT
 
 SLEEPER_API_ROOT = "https://api.sleeper.app/v1"
 SEQUENCE_POSITIONS = {"QB", "RB", "WR", "TE", "K", "DEF", "DST"}
+EXACT_FORMAT_COLUMNS = (
+    "teams",
+    "rounds",
+    "scoring_type",
+    "slots_qb",
+    "slots_rb",
+    "slots_wr",
+    "slots_te",
+    "slots_flex",
+    "slots_k",
+    "slots_def",
+    "slots_bn",
+)
 
 
 def _anonymous_id(kind: str, value: object) -> str:
@@ -184,6 +197,101 @@ def _write_content_addressed_snapshot(payload: object, raw_dir: Path) -> str:
     return digest
 
 
+def exact_format_coverage(
+    picks: pd.DataFrame, *, by_season: bool = False
+) -> pd.DataFrame:
+    """Count drafts by literal roster shape and coarse Sleeper scoring type."""
+    missing = set(("draft_id", "season", *EXACT_FORMAT_COLUMNS)).difference(
+        picks.columns
+    )
+    if missing:
+        raise ValueError(f"draft corpus is missing format columns: {sorted(missing)}")
+    group_columns = (
+        ["season", *EXACT_FORMAT_COLUMNS] if by_season else list(EXACT_FORMAT_COLUMNS)
+    )
+    aggregation = {
+        "drafts": ("draft_id", "nunique"),
+        "picks": ("pick_no", "size"),
+    }
+    if not by_season:
+        aggregation.update(
+            {
+                "seasons": ("season", "nunique"),
+                "first_season": ("season", "min"),
+                "last_season": ("season", "max"),
+            }
+        )
+    return (
+        picks.groupby(group_columns, dropna=False)
+        .agg(**aggregation)
+        .reset_index()
+        .sort_values(["drafts", "picks"], ascending=False)
+        .reset_index(drop=True)
+    )
+
+
+def merge_sleeper_draft_corpora(
+    sources: Sequence[Path], *, destination: Path
+) -> tuple[Path, Path]:
+    """Merge normalized corpora and deduplicate drafts discovered from many seeds."""
+    frames = [pd.read_parquet(path) for path in sources]
+    if not frames:
+        raise ValueError("at least one Sleeper corpus is required")
+    combined = pd.concat(frames, ignore_index=True)
+    duplicate_keys = combined.duplicated(["draft_id", "pick_no"], keep=False)
+    if duplicate_keys.any():
+        conflicting = (
+            combined.loc[duplicate_keys]
+            .groupby(["draft_id", "pick_no"], dropna=False)
+            .nunique(dropna=False)
+            .gt(1)
+            .any(axis=1)
+        )
+        if conflicting.any():
+            raise ValueError("duplicate draft picks disagree across source corpora")
+    combined = (
+        combined.drop_duplicates(["draft_id", "pick_no"])
+        .sort_values(["season", "start_time", "draft_id", "pick_no"])
+        .reset_index(drop=True)
+    )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    combined.to_parquet(destination, index=False)
+    coverage_path = destination.with_suffix(".formats.csv")
+    coverage = exact_format_coverage(combined)
+    season_coverage = exact_format_coverage(combined, by_season=True)
+    coverage.to_csv(coverage_path, index=False)
+    season_coverage.to_csv(
+        destination.with_suffix(".formats_by_season.csv"), index=False
+    )
+    destination.with_suffix(".manifest.json").write_text(
+        json.dumps(
+            {
+                "generated_at": datetime.now(UTC).isoformat(),
+                "source": "merged normalized Sleeper API corpora",
+                "privacy": "user IDs, usernames, and league names are not retained",
+                "source_corpora": len(sources),
+                "drafts": int(combined["draft_id"].nunique()),
+                "picks": len(combined),
+                "coverage": {
+                    "exact_formats": len(coverage),
+                    "formats_with_at_least_50_drafts": int(
+                        coverage["drafts"].ge(50).sum()
+                    ),
+                    "season_exact_formats": len(season_coverage),
+                    "season_exact_formats_with_at_least_50_drafts": int(
+                        season_coverage["drafts"].ge(50).sum()
+                    ),
+                },
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return destination, coverage_path
+
+
 def collect_sleeper_draft_corpus(
     *,
     seasons: Iterable[int],
@@ -207,6 +315,8 @@ def collect_sleeper_draft_corpus(
     candidates: dict[str, Mapping[str, object]] = {}
     pick_cache: dict[str, list[Mapping[str, object]]] = {}
     unresolved_seeds = 0
+    unresolved_participant_requests = 0
+    unresolved_lock = Lock()
 
     def fetch_picks(draft_id: str) -> list[Mapping[str, object]]:
         if draft_id not in pick_cache:
@@ -227,6 +337,15 @@ def collect_sleeper_draft_corpus(
             draft_id = str(item.get("draft_id") or "")
             if draft_id:
                 candidates[draft_id] = item
+
+    def fetch_participant_drafts(path: str) -> object:
+        nonlocal unresolved_participant_requests
+        try:
+            return api.get(path)
+        except (HTTPError, TimeoutError, URLError):
+            with unresolved_lock:
+                unresolved_participant_requests += 1
+            return []
 
     for user_id in dict.fromkeys(str(value) for value in user_ids if str(value)):
         encoded = quote(user_id, safe="")
@@ -257,9 +376,7 @@ def collect_sleeper_draft_corpus(
 
     # User IDs are used transiently to discover related public drafts and are
     # never written to either the normalized data or the manifest.
-    visited_users = {
-        str(value) for value in user_ids if str(value)
-    }
+    visited_users = {str(value) for value in user_ids if str(value)}
     frontier = {
         str(user_id)
         for draft in candidates.values()
@@ -278,7 +395,7 @@ def collect_sleeper_draft_corpus(
             for season in sorted(season_set)
         ]
         with ThreadPoolExecutor(max_workers=max(1, maximum_workers)) as executor:
-            for payload in executor.map(api.get, requests):
+            for payload in executor.map(fetch_participant_drafts, requests):
                 add_drafts(payload)
         visited_users.update(current)
         if depth + 1 >= participant_crawl_depth:
@@ -299,7 +416,10 @@ def collect_sleeper_draft_corpus(
                 and str(pick.get("picked_by") or "") not in visited_users
             )
 
-    output = destination or PROJECT_ROOT / "data" / "processed" / "sleeper_draft_picks.parquet"
+    output = (
+        destination
+        or PROJECT_ROOT / "data" / "processed" / "sleeper_draft_picks.parquet"
+    )
     snapshots = raw_dir or PROJECT_ROOT / "data" / "raw" / "sleeper_drafts"
     eligible = [
         (draft_id, draft)
@@ -358,6 +478,12 @@ def collect_sleeper_draft_corpus(
     )
     output.parent.mkdir(parents=True, exist_ok=True)
     combined.to_parquet(output, index=False)
+    format_coverage = exact_format_coverage(combined)
+    season_format_coverage = exact_format_coverage(combined, by_season=True)
+    format_coverage.to_csv(output.with_suffix(".formats.csv"), index=False)
+    season_format_coverage.to_csv(
+        output.with_suffix(".formats_by_season.csv"), index=False
+    )
     manifest = output.with_suffix(".manifest.json")
     manifest.write_text(
         json.dumps(
@@ -371,6 +497,22 @@ def collect_sleeper_draft_corpus(
                     "participant_crawl_depth": participant_crawl_depth,
                     "users_queried": len(visited_users),
                     "unresolved_seed_requests": unresolved_seeds,
+                    "unresolved_participant_requests": (
+                        unresolved_participant_requests
+                    ),
+                },
+                "coverage": {
+                    "exact_formats": len(format_coverage),
+                    "formats_with_at_least_20_drafts": int(
+                        format_coverage["drafts"].ge(20).sum()
+                    ),
+                    "formats_with_at_least_50_drafts": int(
+                        format_coverage["drafts"].ge(50).sum()
+                    ),
+                    "season_exact_formats": len(season_format_coverage),
+                    "season_exact_formats_with_at_least_50_drafts": int(
+                        season_format_coverage["drafts"].ge(50).sum()
+                    ),
                 },
                 "drafts": manifest_rows,
             },

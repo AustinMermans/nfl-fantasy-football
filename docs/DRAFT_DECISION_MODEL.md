@@ -197,10 +197,13 @@ six picks at that position, draft progress, and both the share and count of
 managers before the next snake turn who currently need that position. The ADP
 comparator uses the same sets and only the market-rank term.
 
-Evaluation is expanding in draft start time within season, team count, and
-scoring strata. Actual lineup slots, bench depth, draft length, and snake state
-remain observation-level inputs instead of fragmenting the sample into literal
-format cells. Each fold derives a right-censored ADP proxy and coefficients from
+Evaluation can use either pooled season/team/scoring strata or canonical exact
+format strata. Canonical exact format is now the primary specification: season, team count,
+draft length, Sleeper scoring family, every starter slot, FLEX, kicker, D/ST,
+and bench depth must match. The former pooled specification remains a declared
+sensitivity analysis. Sleeper's draft response does not expose every custom
+scoring coefficient, so leagues with the same PPR family can still differ in
+passing-touchdown or bonus rules. Each fold derives a right-censored ADP proxy and coefficients from
 earlier drafts only: a player not selected in a training draft is ranked after
 that board's last pick rather than omitted. Later-draft players absent from the
 training market are excluded and reported through known-pick coverage rather
@@ -213,30 +216,39 @@ ablations test position baselines, manager roster state, recent position flow,
 next-turn demand, and the combined model. Log-loss differences are paired by
 held-out draft and Holm-corrected across candidates.
 
-The September 2, 2026 public-seed collection retained 2,327 structurally
-eligible one-QB drafts and 445,353 picks after explicit dynasty and 2QB formats
-were removed. The expanding-time gate used 50 earlier drafts before testing
-blocks of at most 100 later drafts. It produced 19 folds and 1,130 held-out
-drafts across every season from 2020-2025, 10- and 12-team leagues, and PPR plus
-limited half-PPR support. Known-player coverage was 99.2%. Eight- and 14-team
-histories remain below the primary training threshold.
+The expanded September 2026 collection merged three independent public-seed
+networks and retained 17,933 deduplicated, structurally eligible one-QB drafts
+and 3,366,535 picks after explicit mock, dynasty, keeper, 2QB, superflex, and IDP
+formats were removed. It contains 1,742 canonical cross-season format cells. Of
+those, 77 contain at least 50 drafts; 52 season-specific canonical cells clear the
+same threshold. The primary expanding-time gate uses 50 earlier identical
+drafts before testing blocks of at most 100 later drafts. It produced 63 folds
+and 2,375 held-out drafts with 99.4% known-player coverage.
 
 Against position-adjusted, right-censored ADP, manager roster state reduced
-draft-level mean log loss from `3.5277` to `3.4546`, a 2.07% relative
+draft-level mean log loss from `3.2854` to `3.2226`, a 1.91% relative
 improvement. The 95% paired interval for the difference was
-`[-0.0789, -0.0672]`; the improvement appeared in every evaluated
-season/team/scoring cell and cleared Holm. Recent position flow improved the
-position baseline by 0.16%, and adding it to roster state improved another
-0.112%, interval `[-0.0045, -0.0032]`. That run increment shrank to almost zero
-in the 2025 cells, so it should receive temporal shrinkage rather than a fixed
-historical coefficient.
+`[-0.0643, -0.0613]`; all 52 evaluated exact-format cells improved and the
+effect cleared Holm.
 
-The tested next-turn-demand terms added no information beyond the position
-baseline or roster state. Adding every term was also slightly worse than the
-roster-plus-run model. The empirical opponent-choice candidate is therefore
-right-censored ADP plus position, roster state, and a shrunk recent-run term.
-Snake distance and intervening-manager location should enter the downstream
-survival rollout, not be forced into the immediate choice utility.
+Adding the needs and locations of managers selecting before the current
+manager's next snake turn reduced log loss again from `3.2226` to `3.2091`, a
+0.418% incremental improvement. Its paired difference was `-0.01347`, interval
+`[-0.01434, -0.01260]`; it improved 48 of 52 exact cells and every tested
+season. The effect remained favorable in 2025, although smaller than in
+2021-2024. This reverses the conclusion from the smaller pooled-format study:
+pooling materially different lineup structures masked useful opponent-location
+information.
+
+Recent position flow added 0.083% beyond roster state, interval
+`[-0.0031, -0.0023]`, but improved only 33 of 52 cells and was slightly harmful
+in 2023 and 2025. The full bundle beat roster-plus-next-turn by another 0.069%
+in aggregate, but that gain was driven by older seasons and reversed in 2023
+and 2025. A fixed run coefficient is therefore not promoted. The empirical
+opponent-choice candidate is right-censored ADP plus position, manager roster
+state, and intervening-manager need/location. It must next be used to estimate
+survival to the user's next turn and beat capped ADP on downstream roster value
+before it changes the live recommendation.
 
 These remain one-step choice metrics. Survival-to-next-turn must subsequently
 be evaluated by rolling the fitted probabilities through the draft simulator
