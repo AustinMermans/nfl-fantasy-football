@@ -6,7 +6,8 @@ from typing import Mapping, Sequence
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
-from scipy.special import logsumexp
+from scipy.stats import t as student_t
+from scipy.stats import ttest_1samp
 
 
 POSITIONS = ("QB", "RB", "WR", "TE", "K")
@@ -16,6 +17,7 @@ FEATURE_NAMES = (
     "roster_count",
     "recent_position_run",
     "next_turn_demand",
+    "next_turn_competition",
     "starter_need_late",
     "QB",
     "RB",
@@ -23,19 +25,20 @@ FEATURE_NAMES = (
     "TE",
     "K",
 )
-FORMAT_COLUMNS = (
+ABLATION_FEATURE_SETS = {
+    "adp_only": (0,),
+    "position_baseline": (0, 7, 8, 9, 10, 11),
+    "roster_aware": (0, 1, 2, 6, 7, 8, 9, 10, 11),
+    "run_aware": (0, 3, 7, 8, 9, 10, 11),
+    "next_turn_aware": (0, 4, 5, 7, 8, 9, 10, 11),
+    "roster_plus_run": (0, 1, 2, 3, 6, 7, 8, 9, 10, 11),
+    "roster_plus_next_turn": (0, 1, 2, 4, 5, 6, 7, 8, 9, 10, 11),
+    "opponent_aware": tuple(range(len(FEATURE_NAMES))),
+}
+STRATUM_COLUMNS = (
     "season",
     "teams",
-    "rounds",
     "scoring_type",
-    "slots_qb",
-    "slots_rb",
-    "slots_wr",
-    "slots_te",
-    "slots_flex",
-    "slots_k",
-    "slots_def",
-    "slots_bn",
 )
 
 
@@ -120,6 +123,7 @@ def choice_features(
         for manager in next_manager_ids
     ]
     demand = float(np.mean(next_needs)) if next_needs else 0.0
+    competition = float(sum(next_needs) / max(1, teams))
     round_fraction = min(1.0, max(0.0, pick_no / max(1, rounds * teams)))
     return np.asarray(
         [
@@ -128,6 +132,7 @@ def choice_features(
             -float(roster_counts.get(position, 0)) / max(1, rounds),
             sum(item == position for item in recent_positions[-6:]) / 6.0,
             demand,
+            competition,
             need * round_fraction,
             *(float(position == item) for item in POSITIONS),
         ],
@@ -136,13 +141,23 @@ def choice_features(
 
 
 def market_ranks_from_drafts(picks: pd.DataFrame) -> dict[str, float]:
-    ranks = (
-        picks.groupby("player_id")["pick_no"]
-        .mean()
-        .sort_values()
-        .to_dict()
+    draft_caps = picks.groupby("draft_id")["pick_no"].max().add(1).to_dict()
+    total_cap = float(sum(draft_caps.values()))
+    draft_count = max(1, len(draft_caps))
+    selected = picks.groupby("player_id", sort=False).agg(
+        pick_sum=("pick_no", "sum"),
+        selected_drafts=("draft_id", lambda values: tuple(set(values))),
     )
-    return {str(player_id): float(rank) for player_id, rank in ranks.items()}
+    ranks = {
+        str(player_id): (
+            total_cap
+            - sum(float(draft_caps[draft_id]) for draft_id in row.selected_drafts)
+            + float(row.pick_sum)
+        )
+        / draft_count
+        for player_id, row in selected.iterrows()
+    }
+    return dict(sorted(ranks.items(), key=lambda item: (item[1], item[0])))
 
 
 def player_positions_from_drafts(picks: pd.DataFrame) -> dict[str, str]:
@@ -242,16 +257,30 @@ def fit_plackett_luce(
     if not observations:
         raise ValueError("cannot fit a choice model without observations")
     indices = tuple(feature_indices or range(len(FEATURE_NAMES)))
+    lengths = np.asarray([len(item.features) for item in observations], dtype=int)
+    starts = np.concatenate(([0], np.cumsum(lengths)[:-1]))
+    features = np.vstack([item.features[:, indices] for item in observations])
+    chosen_rows = starts + np.asarray(
+        [item.chosen_index for item in observations], dtype=int
+    )
 
     def objective(coefficients: np.ndarray) -> tuple[float, np.ndarray]:
-        loss = 0.5 * l2 * float(coefficients @ coefficients)
-        gradient = l2 * coefficients
-        for observation in observations:
-            features = observation.features[:, indices]
-            utility = features @ coefficients
-            probabilities = np.exp(utility - logsumexp(utility))
-            loss += float(logsumexp(utility) - utility[observation.chosen_index])
-            gradient += probabilities @ features - features[observation.chosen_index]
+        utility = features @ coefficients
+        maxima = np.maximum.reduceat(utility, starts)
+        exponentials = np.exp(utility - np.repeat(maxima, lengths))
+        denominators = np.add.reduceat(exponentials, starts)
+        log_denominators = maxima + np.log(denominators)
+        probabilities = exponentials / np.repeat(denominators, lengths)
+        loss = (
+            0.5 * l2 * float(coefficients @ coefficients)
+            + float(log_denominators.sum())
+            - float(utility[chosen_rows].sum())
+        )
+        gradient = (
+            l2 * coefficients
+            + probabilities @ features
+            - features[chosen_rows].sum(axis=0)
+        )
         return loss, gradient
 
     fitted = minimize(
@@ -266,6 +295,20 @@ def fit_plackett_luce(
         coefficients=np.asarray(fitted.x, dtype=float),
         feature_names=tuple(FEATURE_NAMES[index] for index in indices),
     )
+
+
+def score_choice_log_loss(
+    model: PlackettLuceModel,
+    observations: Sequence[ChoiceObservation],
+    *,
+    feature_indices: Sequence[int] | None = None,
+) -> float:
+    indices = tuple(feature_indices or range(len(FEATURE_NAMES)))
+    losses = []
+    for observation in observations:
+        probabilities = model.probabilities(observation.features[:, indices])
+        losses.append(-np.log(max(float(probabilities[observation.chosen_index]), 1e-12)))
+    return float(np.mean(losses)) if losses else float("nan")
 
 
 def score_choice_model(
@@ -364,22 +407,24 @@ def score_choice_model(
     }
 
 
-def chronological_choice_backtest(
+def _chronological_choice_backtest(
     picks: pd.DataFrame,
     *,
     minimum_train_drafts: int = 20,
     test_drafts_per_fold: int = 10,
     choice_set_size: int = 50,
     l2: float = 1.0,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+    feature_sets: Mapping[str, Sequence[int]],
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Expanding-time comparison of opponent-aware choice and ADP-only models."""
     rows: list[dict[str, object]] = []
     coefficient_rows: list[dict[str, object]] = []
-    for format_key, group in picks.groupby(list(FORMAT_COLUMNS), dropna=False):
+    draft_rows: list[dict[str, object]] = []
+    for stratum_key, group in picks.groupby(list(STRATUM_COLUMNS), dropna=False):
         drafts = (
             group.groupby("draft_id")["start_time"].min().sort_values().index.tolist()
         )
-        if len(drafts) < minimum_train_drafts + test_drafts_per_fold:
+        if len(drafts) <= minimum_train_drafts:
             continue
         for train_end in range(
             minimum_train_drafts,
@@ -408,16 +453,15 @@ def chronological_choice_backtest(
             if not train_observations or not test_observations:
                 continue
             models = {
-                "adp_only": (
+                strategy: (
                     fit_plackett_luce(
-                        train_observations, feature_indices=[0], l2=l2
+                        train_observations,
+                        feature_indices=indices,
+                        l2=l2,
                     ),
-                    (0,),
-                ),
-                "opponent_aware": (
-                    fit_plackett_luce(train_observations, l2=l2),
-                    tuple(range(len(FEATURE_NAMES))),
-                ),
+                    tuple(indices),
+                )
+                for strategy, indices in feature_sets.items()
             }
             for strategy, (model, indices) in models.items():
                 metrics = score_choice_model(
@@ -425,7 +469,7 @@ def chronological_choice_backtest(
                 )
                 rows.append(
                     {
-                        **dict(zip(FORMAT_COLUMNS, format_key)),
+                        **dict(zip(STRATUM_COLUMNS, stratum_key)),
                         "fold": len(drafts[:train_end]),
                         "train_drafts": train_end,
                         "test_drafts": len(test_ids),
@@ -437,7 +481,7 @@ def chronological_choice_backtest(
                 )
                 coefficient_rows.extend(
                     {
-                        **dict(zip(FORMAT_COLUMNS, format_key)),
+                        **dict(zip(STRATUM_COLUMNS, stratum_key)),
                         "fold": len(drafts[:train_end]),
                         "strategy": strategy,
                         "feature": name,
@@ -445,4 +489,121 @@ def chronological_choice_backtest(
                     }
                     for name, value in zip(model.feature_names, model.coefficients)
                 )
-    return pd.DataFrame(rows), pd.DataFrame(coefficient_rows)
+                by_draft: dict[str, list[ChoiceObservation]] = {}
+                for observation in test_observations:
+                    by_draft.setdefault(observation.draft_id, []).append(observation)
+                for draft_id, observations in sorted(by_draft.items()):
+                    draft_rows.append(
+                        {
+                            **dict(zip(STRATUM_COLUMNS, stratum_key)),
+                            "fold": len(drafts[:train_end]),
+                            "strategy": strategy,
+                            "draft_id": draft_id,
+                            "n": len(observations),
+                            "log_loss": score_choice_log_loss(
+                                model,
+                                observations,
+                                feature_indices=indices,
+                            ),
+                        }
+                    )
+    return (
+        pd.DataFrame(rows),
+        pd.DataFrame(coefficient_rows),
+        pd.DataFrame(draft_rows),
+    )
+
+
+def chronological_choice_backtest(
+    picks: pd.DataFrame,
+    *,
+    minimum_train_drafts: int = 20,
+    test_drafts_per_fold: int = 10,
+    choice_set_size: int = 50,
+    l2: float = 1.0,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    results, coefficients, _ = _chronological_choice_backtest(
+        picks,
+        minimum_train_drafts=minimum_train_drafts,
+        test_drafts_per_fold=test_drafts_per_fold,
+        choice_set_size=choice_set_size,
+        l2=l2,
+        feature_sets={
+            "adp_only": ABLATION_FEATURE_SETS["adp_only"],
+            "opponent_aware": ABLATION_FEATURE_SETS["opponent_aware"],
+        },
+    )
+    return results, coefficients
+
+
+def chronological_choice_ablation_backtest(
+    picks: pd.DataFrame,
+    *,
+    minimum_train_drafts: int = 20,
+    test_drafts_per_fold: int = 10,
+    choice_set_size: int = 50,
+    l2: float = 1.0,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    return _chronological_choice_backtest(
+        picks,
+        minimum_train_drafts=minimum_train_drafts,
+        test_drafts_per_fold=test_drafts_per_fold,
+        choice_set_size=choice_set_size,
+        l2=l2,
+        feature_sets=ABLATION_FEATURE_SETS,
+    )
+
+
+def compare_choice_models(
+    draft_metrics: pd.DataFrame,
+    *,
+    control: str = "adp_only",
+) -> pd.DataFrame:
+    """Paired draft-level log-loss comparisons with Holm correction."""
+    index = [*STRATUM_COLUMNS, "fold", "draft_id"]
+    pivot = draft_metrics.pivot(index=index, columns="strategy", values="log_loss")
+    if control not in pivot:
+        raise ValueError(f"control strategy {control!r} is absent")
+    rows: list[dict[str, object]] = []
+    for strategy in sorted(set(pivot.columns).difference({control})):
+        paired = pivot[[control, strategy]].dropna()
+        delta = paired[strategy] - paired[control]
+        n = len(delta)
+        standard_error = float(delta.std(ddof=1) / np.sqrt(n)) if n > 1 else float("nan")
+        critical = float(student_t.ppf(0.975, n - 1)) if n > 1 else float("nan")
+        mean_delta = float(delta.mean()) if n else float("nan")
+        if n > 1 and float(delta.std(ddof=1)) > 1e-12:
+            p_value = float(ttest_1samp(delta, 0.0, alternative="less").pvalue)
+        elif n > 1:
+            p_value = 0.0 if mean_delta < 0 else (1.0 if mean_delta > 0 else 0.5)
+        else:
+            p_value = float("nan")
+        rows.append(
+            {
+                "control": control,
+                "strategy": strategy,
+                "drafts": n,
+                "mean_control_log_loss": float(paired[control].mean()),
+                "mean_strategy_log_loss": float(paired[strategy].mean()),
+                "mean_log_loss_delta": mean_delta,
+                "relative_log_loss_improvement": (
+                    -mean_delta / float(paired[control].mean()) if n else float("nan")
+                ),
+                "draft_win_rate": float((delta < 0).mean()) if n else float("nan"),
+                "ci_low": mean_delta - critical * standard_error,
+                "ci_high": mean_delta + critical * standard_error,
+                "p_value_one_sided": p_value,
+            }
+        )
+    comparison = pd.DataFrame(rows)
+    valid = comparison["p_value_one_sided"].notna()
+    ordered = comparison.loc[valid].sort_values("p_value_one_sided").index
+    adjusted = 0.0
+    family_size = len(ordered)
+    comparison["holm_p"] = np.nan
+    for rank, row_index in enumerate(ordered):
+        raw = float(comparison.loc[row_index, "p_value_one_sided"])
+        adjusted = max(adjusted, min(1.0, (family_size - rank) * raw))
+        comparison.loc[row_index, "holm_p"] = adjusted
+    comparison["passes_holm_05"] = comparison["holm_p"] < 0.05
+    return comparison.sort_values("mean_log_loss_delta").reset_index(drop=True)

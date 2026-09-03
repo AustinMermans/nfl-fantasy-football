@@ -181,9 +181,10 @@ intervention supported by this repository's historical evidence.
 
 The research CLI can collect completed Sleeper redraft snake sequences from an
 explicit user, league, or draft seed. Requests are kept below Sleeper's stated
-rate guideline. Persisted snapshots exclude user IDs, usernames, league names,
-and draft names. D/ST picks are retained as sequence events so snake timing is
-correct, but D/ST is excluded from the offensive-player choice target.
+rate guideline. Persisted snapshots hash draft and league IDs and exclude user
+IDs, usernames, league names, and draft names. D/ST picks are retained as
+sequence events so snake timing is correct, but D/ST is excluded from the
+offensive-player choice target.
 
 For a manager state `s`, available choice set `C`, and candidate player `i`, the
 model is:
@@ -192,22 +193,56 @@ model is:
 
 `x(i,s)` contains market rank, player position, whether the manager still needs
 that starter position, the manager's current count at the position, the last
-six picks at that position, draft progress, and the fraction of managers before
-the next snake turn who currently need that position. The ADP comparator uses
-the same sets and only the market-rank term.
+six picks at that position, draft progress, and both the share and count of
+managers before the next snake turn who currently need that position. The ADP
+comparator uses the same sets and only the market-rank term.
 
-Evaluation is expanding in draft start time within an exact season, team count,
-scoring, rounds, lineup, bench, and D/ST format. Each fold derives its ADP proxy
-and coefficients from earlier drafts only. Later-draft players absent from the
+Evaluation is expanding in draft start time within season, team count, and
+scoring strata. Actual lineup slots, bench depth, draft length, and snake state
+remain observation-level inputs instead of fragmenting the sample into literal
+format cells. Each fold derives a right-censored ADP proxy and coefficients from
+earlier drafts only: a player not selected in a training draft is ranked after
+that board's last pick rather than omitted. Later-draft players absent from the
 training market are excluded and reported through known-pick coverage rather
 than assigned hindsight ranks. The risk set is capped at the top 50 available
 training-market players plus the observed choice during fitting.
 
 The report includes multinomial log loss and Brier score, top-1/top-5 accuracy,
-ICI, E50/E90/Emax, and logistic calibration intercept/slope. These are one-step
-choice metrics. Survival-to-next-turn must subsequently be evaluated by rolling
-the fitted probabilities through the draft simulator without conditioning on
-future realized picks.
+ICI, E50/E90/Emax, and logistic calibration intercept/slope. Separate
+ablations test position baselines, manager roster state, recent position flow,
+next-turn demand, and the combined model. Log-loss differences are paired by
+held-out draft and Holm-corrected across candidates.
+
+The September 2, 2026 public-seed collection retained 2,327 structurally
+eligible one-QB drafts and 445,353 picks after explicit dynasty and 2QB formats
+were removed. The expanding-time gate used 50 earlier drafts before testing
+blocks of at most 100 later drafts. It produced 19 folds and 1,130 held-out
+drafts across every season from 2020-2025, 10- and 12-team leagues, and PPR plus
+limited half-PPR support. Known-player coverage was 99.2%. Eight- and 14-team
+histories remain below the primary training threshold.
+
+Against position-adjusted, right-censored ADP, manager roster state reduced
+draft-level mean log loss from `3.5277` to `3.4546`, a 2.07% relative
+improvement. The 95% paired interval for the difference was
+`[-0.0789, -0.0672]`; the improvement appeared in every evaluated
+season/team/scoring cell and cleared Holm. Recent position flow improved the
+position baseline by 0.16%, and adding it to roster state improved another
+0.112%, interval `[-0.0045, -0.0032]`. That run increment shrank to almost zero
+in the 2025 cells, so it should receive temporal shrinkage rather than a fixed
+historical coefficient.
+
+The tested next-turn-demand terms added no information beyond the position
+baseline or roster state. Adding every term was also slightly worse than the
+roster-plus-run model. The empirical opponent-choice candidate is therefore
+right-censored ADP plus position, roster state, and a shrunk recent-run term.
+Snake distance and intervening-manager location should enter the downstream
+survival rollout, not be forced into the immediate choice utility.
+
+These remain one-step choice metrics. Survival-to-next-turn must subsequently
+be evaluated by rolling the fitted probabilities through the draft simulator
+without conditioning on future realized picks. The current evidence does not
+show a downstream draft-win improvement or generalization to 8- and 14-team
+leagues.
 
 ## Expert review consensus
 

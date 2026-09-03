@@ -299,13 +299,19 @@ cross-fold grouped improvement exceeds the screened subset.
   dependence, head-to-head win probability, and championship objectives remain
   absent. The injury approximation has not yet passed a rolling-origin
   calibration study and should not be interpreted as a medical forecast.
-- The policy test uses aggregate MFL ADP rather than raw, timestamped manager
-  sequences. A PII-minimized Sleeper collector and expanding-time Plackett-Luce
-  evaluation harness now exist, but no seeded sequence corpus is checked into
-  the repository and no fitted opponent-aware coefficients are deployed.
-  Opponent deviations are still simulated, waiver/trade and playoff outcomes
-  are absent, and several cross-size estimates remain imprecise. The capped-ADP
-  edge does not establish universal optimality.
+- A local, Git-ignored Sleeper corpus now contains 2,327 structurally eligible
+  one-QB redraft drafts and 445,353 picks from public seeds after explicit
+  dynasty and 2QB formats were removed. Draft and league IDs are hashed and
+  user identity is not persisted. Expanding-time tests yielded 19 folds and
+  1,130 held-out drafts from 2020-2025 in 10- and 12-team PPR cells with limited
+  half-PPR support. Against position-adjusted right-censored ADP, manager roster
+  state reduced paired log loss from `3.5277` to `3.4546` (2.07%) and improved
+  every evaluated season/team/scoring cell. Recent position flow added 0.112%
+  beyond roster state, but the increment was nearly zero in 2025. Direct
+  next-turn-demand terms added nothing, and the full bundle was slightly worse
+  than roster plus run. No coefficients are yet deployed because one-step
+  choice accuracy has not been converted into a calibrated survival rollout or
+  downstream capped-ADP policy test; 8- and 14-team evidence remains thin.
 - The ROS empirical-Bayes weights are declared priors, not yet selected in a
   nested historical rest-of-season backtest. The next research gate is
   rolling-origin error and calibration by position and week of season.

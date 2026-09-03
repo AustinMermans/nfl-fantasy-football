@@ -5,7 +5,9 @@ from nfl_fantasy_football.opponent_choice import (
     ChoiceObservation,
     _next_manager_ids,
     chronological_choice_backtest,
+    compare_choice_models,
     fit_plackett_luce,
+    market_ranks_from_drafts,
     score_choice_model,
 )
 
@@ -13,7 +15,7 @@ from nfl_fantasy_football.opponent_choice import (
 def test_plackett_luce_recovers_roster_need_signal_beyond_equal_adp() -> None:
     observations = []
     for index in range(40):
-        features = np.zeros((2, 11), dtype=float)
+        features = np.zeros((2, 12), dtype=float)
         features[0, 1] = 1.0
         observations.append(
             ChoiceObservation(
@@ -117,3 +119,77 @@ def test_later_drafts_do_not_change_an_earlier_fold() -> None:
         shorter[columns].reset_index(drop=True),
         longer.loc[longer["fold"].eq(4), columns].reset_index(drop=True),
     )
+
+
+def test_chronological_backtest_keeps_partial_final_test_block() -> None:
+    results, _ = chronological_choice_backtest(
+        _synthetic_draft_corpus(5),
+        minimum_train_drafts=4,
+        test_drafts_per_fold=10,
+        choice_set_size=8,
+    )
+
+    assert not results.empty
+    assert results["test_drafts"].eq(1).all()
+
+
+def test_choice_model_comparison_is_paired_and_holm_corrected() -> None:
+    rows = []
+    for draft in range(8):
+        for strategy, loss in (
+            ("adp_only", 3.0 + draft / 100),
+            ("roster_aware", 2.9 + draft / 100),
+            ("run_aware", 3.1 + draft / 100),
+        ):
+            row = {
+                column: (2025 if column == "season" else 1)
+                for column in (
+                    "season",
+                    "teams",
+                    "rounds",
+                    "scoring_type",
+                    "slots_qb",
+                    "slots_rb",
+                    "slots_wr",
+                    "slots_te",
+                    "slots_flex",
+                    "slots_k",
+                    "slots_def",
+                    "slots_bn",
+                )
+            }
+            rows.append(
+                {
+                    **row,
+                    "fold": 4,
+                    "draft_id": f"draft-{draft}",
+                    "strategy": strategy,
+                    "log_loss": loss,
+                }
+            )
+
+    comparison = compare_choice_models(pd.DataFrame(rows))
+
+    roster = comparison.set_index("strategy").loc["roster_aware"]
+    run = comparison.set_index("strategy").loc["run_aware"]
+    assert roster["drafts"] == 8
+    assert np.isclose(roster["mean_log_loss_delta"], -0.1)
+    assert roster["passes_holm_05"]
+    assert not run["passes_holm_05"]
+
+
+def test_market_rank_accounts_for_undrafted_players() -> None:
+    picks = pd.DataFrame(
+        [
+            {"draft_id": "a", "player_id": "always", "pick_no": 1},
+            {"draft_id": "a", "player_id": "rare", "pick_no": 2},
+            {"draft_id": "b", "player_id": "always", "pick_no": 1},
+            {"draft_id": "b", "player_id": "other", "pick_no": 2},
+        ]
+    )
+
+    ranks = market_ranks_from_drafts(picks)
+
+    assert ranks["always"] == 1.0
+    assert ranks["rare"] == 2.5
+    assert ranks["other"] == 2.5

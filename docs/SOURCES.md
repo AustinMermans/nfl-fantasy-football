@@ -16,8 +16,10 @@
   treated as a complete league-size series. The documented API returns drafts
   for a known user or league and complete picks for a known draft, but provides
   no global league enumeration endpoint. Historical sequence collection is
-  therefore rate-limited and seed-based. Stored research snapshots omit user
-  IDs, usernames, draft names, and league names.
+  therefore rate-limited and seed-based, beginning from draft boards publicly
+  posted on fantasy-football forums and Sleeper's public feed. Stored research
+  snapshots hash draft and league IDs and omit user IDs, usernames, draft
+  names, and league names.
 - [MyFantasyLeague developer API](https://myfantasyleague.wordpress.com/2008/08/06/developer-api/):
   historical AUG15 Standard/PPR ADP by season and league size. The draft-policy
   backtest interpolates half PPR and caches the exact raw responses under

@@ -41,7 +41,10 @@ from .market import (
     polymarket_player_market_catalog,
 )
 from .participation import summarize_participation, walk_forward_participation
-from .opponent_choice import chronological_choice_backtest
+from .opponent_choice import (
+    chronological_choice_ablation_backtest,
+    compare_choice_models,
+)
 from .production import build_season_forecasts, write_production_artifacts
 from .preseason import walk_forward_preseason_backtest
 from .sleeper import write_sleeper_market
@@ -612,6 +615,9 @@ def _sleeper_draft_corpus(args: argparse.Namespace) -> None:
         team_sizes=args.team_sizes,
         minimum_rounds=args.minimum_rounds,
         maximum_drafts=args.maximum_drafts,
+        participant_crawl_depth=args.participant_crawl_depth,
+        maximum_users=args.maximum_users,
+        maximum_workers=args.maximum_workers,
         destination=destination,
     )
     print(f"wrote normalized Sleeper picks to {picks}")
@@ -621,7 +627,7 @@ def _sleeper_draft_corpus(args: argparse.Namespace) -> None:
 def _opponent_choice_backtest(args: argparse.Namespace) -> None:
     source = Path(args.picks)
     picks = pd.read_parquet(source)
-    results, coefficients = chronological_choice_backtest(
+    results, coefficients, draft_metrics = chronological_choice_ablation_backtest(
         picks,
         minimum_train_drafts=args.minimum_train_drafts,
         test_drafts_per_fold=args.test_drafts_per_fold,
@@ -636,8 +642,23 @@ def _opponent_choice_backtest(args: argparse.Namespace) -> None:
     suffix = f"_{args.output_suffix}" if args.output_suffix else ""
     result_path = output / f"opponent_choice_backtest{suffix}.csv"
     coefficient_path = output / f"opponent_choice_coefficients{suffix}.csv"
+    draft_metric_path = output / f"opponent_choice_by_draft{suffix}.csv"
+    comparison_path = output / f"opponent_choice_comparison{suffix}.csv"
     results.to_csv(result_path, index=False)
     coefficients.to_csv(coefficient_path, index=False)
+    draft_metrics.to_csv(draft_metric_path, index=False)
+    paired_comparison = compare_choice_models(draft_metrics)
+    paired_comparison.to_csv(comparison_path, index=False)
+    incremental_comparisons: list[tuple[str, pd.DataFrame, Path]] = []
+    for control in ("position_baseline", "roster_aware", "roster_plus_run"):
+        if control not in set(draft_metrics["strategy"]):
+            continue
+        incremental = compare_choice_models(draft_metrics, control=control)
+        incremental_path = (
+            output / f"opponent_choice_comparison_vs_{control}{suffix}.csv"
+        )
+        incremental.to_csv(incremental_path, index=False)
+        incremental_comparisons.append((control, incremental, incremental_path))
     comparison = results.groupby("strategy", as_index=False).agg(
         folds=("fold", "count"),
         known_pick_coverage=("known_pick_coverage", "mean"),
@@ -653,8 +674,17 @@ def _opponent_choice_backtest(args: argparse.Namespace) -> None:
         calibration_slope=("calibration_slope", "mean"),
     )
     print(comparison.round(4).to_string(index=False))
+    print("\npaired log-loss comparisons versus ADP")
+    print(paired_comparison.round(4).to_string(index=False))
+    for control, incremental, _ in incremental_comparisons:
+        print(f"\npaired log-loss comparisons versus {control}")
+        print(incremental.round(4).to_string(index=False))
     print(f"wrote opponent choice results to {result_path}")
     print(f"wrote opponent choice coefficients to {coefficient_path}")
+    print(f"wrote draft-level paired metrics to {draft_metric_path}")
+    print(f"wrote Holm-adjusted comparisons to {comparison_path}")
+    for _, _, incremental_path in incremental_comparisons:
+        print(f"wrote incremental comparisons to {incremental_path}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -806,6 +836,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sleeper_corpus.add_argument("--minimum-rounds", type=int, default=12)
     sleeper_corpus.add_argument("--maximum-drafts", type=int, default=500)
+    sleeper_corpus.add_argument("--participant-crawl-depth", type=int, default=0)
+    sleeper_corpus.add_argument("--maximum-users", type=int, default=250)
+    sleeper_corpus.add_argument("--maximum-workers", type=int, default=8)
     sleeper_corpus.add_argument("--destination")
     sleeper_corpus.set_defaults(handler=_sleeper_draft_corpus)
     choice_backtest = commands.add_parser("opponent-choice-backtest")
