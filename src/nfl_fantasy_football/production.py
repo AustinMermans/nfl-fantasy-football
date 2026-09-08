@@ -8,7 +8,14 @@ import numpy as np
 import pandas as pd
 
 from .config import PROJECT_ROOT
-from .data import RAW_DIR, STAT_COLUMNS, _download, download_nflverse, load_player_games
+from .data import (
+    RAW_DIR,
+    STAT_COLUMNS,
+    _download,
+    download_nflverse,
+    ensure_columns,
+    load_player_games,
+)
 from .evaluation import TARGET_POSITIONS
 from .fantasy import DEPLOYMENT_SELECTION, KEYS, _selected_long
 from .features import build_features, feature_sets
@@ -171,20 +178,28 @@ def current_preseason_games(season: int) -> tuple[pd.DataFrame, str]:
         "pos_rank",
         "pos_name",
     ]
-    future = roster[roster_columns].merge(
-        team_games, on="team", how="inner", validate="many_to_many"
-    ).rename(
-        columns={
-            "gsis_id": "player_id",
-            "full_name": "player_name",
-            "rookie_year": "draft_year",
-            "draft_number": "draft_pick",
-            "pos_rank": "depth_rank",
-            "pos_slot": "depth_slot",
-        }
+    future = (
+        roster[roster_columns]
+        .merge(team_games, on="team", how="inner", validate="many_to_many")
+        .rename(
+            columns={
+                "gsis_id": "player_id",
+                "full_name": "player_name",
+                "rookie_year": "draft_year",
+                "draft_number": "draft_pick",
+                "pos_rank": "depth_rank",
+                "pos_slot": "depth_slot",
+            }
+        )
     )
     future["pfr_player_id"] = future["pfr_id"]
-    for column in ("offense_snaps", "offense_pct", "defense_snaps", "st_snaps", "played"):
+    for column in (
+        "offense_snaps",
+        "offense_pct",
+        "defense_snaps",
+        "st_snaps",
+        "played",
+    ):
         future[column] = 0.0
     for column in STAT_COLUMNS:
         future[column] = 0.0
@@ -199,7 +214,7 @@ def current_preseason_games(season: int) -> tuple[pd.DataFrame, str]:
     injury_path = RAW_DIR / f"injuries_{season}.parquet"
     future["current_injury_feed"] = False
     if injury_path.exists():
-        injuries = pd.read_parquet(injury_path)
+        injuries = ensure_columns(pd.read_parquet(injury_path), injury_columns)
 
         def first_non_null(values: pd.Series):
             non_null = values.dropna()
@@ -341,11 +356,17 @@ def fantasy_forecasts(
     selected = _selected_long(
         components, {field: DEPLOYMENT_SELECTION[field] for field in fields}
     )
-    predicted = selected.pivot(index=KEYS, columns="target", values="predicted").reset_index()
+    predicted = selected.pivot(
+        index=KEYS, columns="target", values="predicted"
+    ).reset_index()
     predicted["predicted_fantasy_points"] = score_components(predicted)
-    baseline = _selected_long(
-        components, {field: ("recent_mean", "recent_mean") for field in fields}
-    ).pivot(index=KEYS, columns="target", values="predicted").reset_index()
+    baseline = (
+        _selected_long(
+            components, {field: ("recent_mean", "recent_mean") for field in fields}
+        )
+        .pivot(index=KEYS, columns="target", values="predicted")
+        .reset_index()
+    )
     baseline["baseline_fantasy_points"] = score_components(baseline)
     output = predicted[KEYS + ["predicted_fantasy_points"]].merge(
         baseline[KEYS + ["baseline_fantasy_points"]], on=KEYS, validate="one_to_one"
@@ -411,38 +432,35 @@ def apply_current_role_adjustments(
     ].eq(0)
     season = int(roles["season"].iloc[0])
     current_played = (
-        history[
-            history["season"].eq(season)
-            & history["played"].fillna(0).gt(0)
-        ]
+        history[history["season"].eq(season) & history["played"].fillna(0).gt(0)]
         .groupby("player_id")["game_id"]
         .nunique()
     )
     roles["current_games_played"] = roles["player_id"].map(current_played).fillna(0.0)
     full_season_equivalent = totals.copy()
-    full_season_equivalent["predicted_fantasy_points"] *= (
-        17.0 / full_season_equivalent["future_games"].clip(lower=1)
-    )
+    full_season_equivalent["predicted_fantasy_points"] *= 17.0 / full_season_equivalent[
+        "future_games"
+    ].clip(lower=1)
     rookie_priors = rookie_prior_table(
         history[history["season"].lt(season)], full_season_equivalent, roles
     )
-    preseason_means = fit_preseason_means(
-        history, future_features, season=season
-    )
+    preseason_means = fit_preseason_means(history, future_features, season=season)
     totals = totals.merge(roles, on="player_id", validate="one_to_one")
     experienced = totals[totals["player_games_prior"].gt(0)]
-    role_prior = experienced.groupby(
-        ["position", "depth_rank"], as_index=False
-    )["predicted_fantasy_points"].median().rename(
-        columns={"predicted_fantasy_points": "role_prior_points"}
+    role_prior = (
+        experienced.groupby(["position", "depth_rank"], as_index=False)[
+            "predicted_fantasy_points"
+        ]
+        .median()
+        .rename(columns={"predicted_fantasy_points": "role_prior_points"})
     )
     position_prior = experienced.groupby("position")[
         "predicted_fantasy_points"
     ].median()
-    adjustments = totals.merge(
-        role_prior, on=["position", "depth_rank"], how="left"
-    ).merge(rookie_priors, on="player_id", how="left").merge(
-        preseason_means, on="player_id", how="left"
+    adjustments = (
+        totals.merge(role_prior, on=["position", "depth_rank"], how="left")
+        .merge(rookie_priors, on="player_id", how="left")
+        .merge(preseason_means, on="player_id", how="left")
     )
     adjustments["role_prior_points"] = adjustments["role_prior_points"].fillna(
         adjustments["position"].map(position_prior)
@@ -488,10 +506,9 @@ def apply_current_role_adjustments(
         reserve_cap, "role_prior_points"
     ]
     adjustments.loc[reserve_cap, "adjustment_reason"] = "reserve-role cap"
-    adjustments["point_calibration_scale"] = (
-        adjustments["adjusted_points"]
-        / adjustments["predicted_fantasy_points"].clip(lower=1.0)
-    )
+    adjustments["point_calibration_scale"] = adjustments[
+        "adjusted_points"
+    ] / adjustments["predicted_fantasy_points"].clip(lower=1.0)
     adjustments["role_scale"] = adjustments["point_calibration_scale"]
     audit = adjustments[
         [
@@ -545,9 +562,11 @@ def build_season_forecasts(
     score_complete = completed_regular_games(season)
     current_history = current_season_history(season, score_complete)
     completed = observed_completed_games(score_complete, current_history)
-    history = pd.concat(
-        [prior_history, current_history], ignore_index=True, sort=False
-    ) if not current_history.empty else prior_history
+    history = (
+        pd.concat([prior_history, current_history], ignore_index=True, sort=False)
+        if not current_history.empty
+        else prior_history
+    )
     future, as_of = current_preseason_games(season)
     if not completed.empty:
         future = future[~future["game_id"].isin(set(completed["game_id"]))].copy()
@@ -569,9 +588,9 @@ def build_season_forecasts(
         components, future_features, history
     )
     adjustment_reason = role_audit.set_index("player_id")["adjustment_reason"]
-    future_features["role_adjustment"] = future_features["player_id"].map(
-        adjustment_reason
-    ).fillna("none")
+    future_features["role_adjustment"] = (
+        future_features["player_id"].map(adjustment_reason).fillna("none")
+    )
     for column in (
         "rookie_p10",
         "rookie_p50",
@@ -609,7 +628,9 @@ def write_production_artifacts(
     results.mkdir(parents=True, exist_ok=True)
     fantasy.to_parquet(results / "current_fantasy_forecasts.parquet", index=False)
     components.to_parquet(results / "current_component_forecasts.parquet", index=False)
-    future_features.to_parquet(results / "current_feature_snapshots.parquet", index=False)
+    future_features.to_parquet(
+        results / "current_feature_snapshots.parquet", index=False
+    )
     (results / "current_forecast_generated_at.txt").write_text(
         datetime.now(UTC).isoformat() + "\n", encoding="utf-8"
     )

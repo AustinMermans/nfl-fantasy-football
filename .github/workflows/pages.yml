@@ -5,7 +5,8 @@ on:
     branches: [main]
   workflow_dispatch:
   schedule:
-    - cron: "0 11 * * *"
+    - cron: "23 4 * * *"
+      timezone: "America/Los_Angeles"
 
 permissions:
   contents: read
@@ -58,7 +59,17 @@ jobs:
 
       - name: Refresh current season forecasts
         if: github.event_name != 'push'
-        run: nfl-fantasy season-forecast --season 2026 --refresh
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if nfl-fantasy season-forecast --season 2026 --refresh; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              sleep $((attempt * 30))
+            fi
+          done
+          exit 1
 
       - name: Verify refreshed forecast payload
         if: github.event_name != 'push'

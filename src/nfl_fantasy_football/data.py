@@ -57,8 +57,7 @@ def download_nflverse(seasons: range | list[int], *, refresh: bool = False) -> N
     for season in seasons:
         assets = {
             RAW_DIR / f"stats_player_week_{season}.parquet": (
-                f"{NFLVERSE_RELEASE}/stats_player/"
-                f"stats_player_week_{season}.parquet"
+                f"{NFLVERSE_RELEASE}/stats_player/stats_player_week_{season}.parquet"
             ),
             RAW_DIR / f"snap_counts_{season}.parquet": (
                 f"{NFLVERSE_RELEASE}/snap_counts/snap_counts_{season}.parquet"
@@ -91,6 +90,17 @@ def _load_many(pattern: str, seasons: list[int]) -> pd.DataFrame:
     return pd.concat((pd.read_parquet(path) for path in paths), ignore_index=True)
 
 
+def ensure_columns(
+    frame: pd.DataFrame, columns: list[str] | tuple[str, ...]
+) -> pd.DataFrame:
+    """Return a copy with absent optional source columns filled with nulls."""
+    result = frame.copy()
+    for column in columns:
+        if column not in result.columns:
+            result[column] = None
+    return result
+
+
 def _load_optional_many(
     pattern: str,
     seasons: list[int],
@@ -101,22 +111,31 @@ def _load_optional_many(
     existing = [path for path in paths if path.exists()]
     if not existing:
         return pd.DataFrame(columns=columns)
-    return pd.concat((pd.read_parquet(path) for path in existing), ignore_index=True)
+    frame = pd.concat((pd.read_parquet(path) for path in existing), ignore_index=True)
+    return ensure_columns(frame, columns)
 
 
 def load_player_games(
     seasons: list[int],
     *,
-        positions: tuple[str, ...] = ("QB", "RB", "FB", "WR", "TE", "K"),
+    positions: tuple[str, ...] = ("QB", "RB", "FB", "WR", "TE", "K"),
 ) -> pd.DataFrame:
     """Build one row per active-roster skill player and scheduled regular-season game."""
     stats = _load_many("stats_player_week_{season}.parquet", seasons)
     snaps = _load_many("snap_counts_{season}.parquet", seasons)
     rosters = _load_many("roster_weekly_{season}.parquet", seasons)
     injury_columns = [
-        "game_type", "season", "week", "team", "gsis_id",
-        "report_primary_injury", "report_secondary_injury", "report_status",
-        "practice_primary_injury", "practice_secondary_injury", "practice_status",
+        "game_type",
+        "season",
+        "week",
+        "team",
+        "gsis_id",
+        "report_primary_injury",
+        "report_secondary_injury",
+        "report_status",
+        "practice_primary_injury",
+        "practice_secondary_injury",
+        "practice_status",
     ]
     injuries = _load_optional_many(
         "injuries_{season}.parquet", seasons, columns=injury_columns
@@ -127,8 +146,7 @@ def load_player_games(
         stats["season_type"].eq("REG") & stats["position"].isin(positions)
     ].copy()
     snaps = snaps[
-        snaps["game_type"].eq("REG")
-        & snaps["position"].isin(positions)
+        snaps["game_type"].eq("REG") & snaps["position"].isin(positions)
     ].copy()
     rosters = rosters[
         rosters["game_type"].eq("REG")
@@ -144,40 +162,77 @@ def load_player_games(
         schedules["season"].isin(seasons) & schedules["game_type"].eq("REG")
     ].copy()
     shared_game_columns = [
-        "game_id", "season", "week", "gameday", "home_team", "away_team",
-        "spread_line", "total_line", "roof", "surface", "temp", "wind",
+        "game_id",
+        "season",
+        "week",
+        "gameday",
+        "home_team",
+        "away_team",
+        "spread_line",
+        "total_line",
+        "roof",
+        "surface",
+        "temp",
+        "wind",
     ]
     home_games = schedule_core[shared_game_columns + ["home_rest"]].rename(
-        columns={"home_team": "team", "away_team": "opponent_team", "home_rest": "rest_days"}
+        columns={
+            "home_team": "team",
+            "away_team": "opponent_team",
+            "home_rest": "rest_days",
+        }
     )
     home_games["home"] = 1.0
     away_games = schedule_core[shared_game_columns + ["away_rest"]].rename(
-        columns={"away_team": "team", "home_team": "opponent_team", "away_rest": "rest_days"}
+        columns={
+            "away_team": "team",
+            "home_team": "opponent_team",
+            "away_rest": "rest_days",
+        }
     )
     away_games["home"] = 0.0
     team_games = pd.concat([home_games, away_games], ignore_index=True)
 
     roster_columns = [
-        "season", "week", "team", "gsis_id", "pfr_id", "full_name", "position",
-        "birth_date", "height", "weight", "years_exp", "rookie_year", "draft_number",
+        "season",
+        "week",
+        "team",
+        "gsis_id",
+        "pfr_id",
+        "full_name",
+        "position",
+        "birth_date",
+        "height",
+        "weight",
+        "years_exp",
+        "rookie_year",
+        "draft_number",
     ]
-    base = rosters[roster_columns].merge(
-        team_games,
-        on=["season", "week", "team"],
-        how="inner",
-        validate="many_to_one",
-    ).rename(
-        columns={
-            "gsis_id": "player_id",
-            "full_name": "player_name",
-            "rookie_year": "draft_year",
-            "draft_number": "draft_pick",
-        }
+    base = (
+        rosters[roster_columns]
+        .merge(
+            team_games,
+            on=["season", "week", "team"],
+            how="inner",
+            validate="many_to_one",
+        )
+        .rename(
+            columns={
+                "gsis_id": "player_id",
+                "full_name": "player_name",
+                "rookie_year": "draft_year",
+                "draft_number": "draft_pick",
+            }
+        )
     )
 
     snap_columns = [
-        "game_id", "pfr_player_id", "offense_snaps", "offense_pct",
-        "defense_snaps", "st_snaps",
+        "game_id",
+        "pfr_player_id",
+        "offense_snaps",
+        "offense_pct",
+        "defense_snaps",
+        "st_snaps",
     ]
     base = base.merge(
         snaps[snap_columns].drop_duplicates(["game_id", "pfr_player_id"], keep="last"),
@@ -187,14 +242,15 @@ def load_player_games(
         validate="many_to_one",
     )
     base["played"] = (
-        base["offense_snaps"].fillna(0).gt(0)
-        | base["st_snaps"].fillna(0).gt(0)
+        base["offense_snaps"].fillna(0).gt(0) | base["st_snaps"].fillna(0).gt(0)
     ).astype(float)
     for column in ["offense_snaps", "offense_pct", "defense_snaps", "st_snaps"]:
         base[column] = base[column].fillna(0.0)
 
     stat_columns = ["game_id", "player_id", *STAT_COLUMNS]
-    observed = stats[stat_columns].drop_duplicates(["game_id", "player_id"], keep="last")
+    observed = stats[stat_columns].drop_duplicates(
+        ["game_id", "player_id"], keep="last"
+    )
     frame = base.merge(
         observed,
         on=["game_id", "player_id"],
@@ -208,8 +264,12 @@ def load_player_games(
         return non_null.iloc[-1] if not non_null.empty else None
 
     injury_columns = [
-        "report_primary_injury", "report_secondary_injury", "report_status",
-        "practice_primary_injury", "practice_secondary_injury", "practice_status",
+        "report_primary_injury",
+        "report_secondary_injury",
+        "report_status",
+        "practice_primary_injury",
+        "practice_secondary_injury",
+        "practice_status",
     ]
     injury_week = (
         injuries[injuries["game_type"].eq("REG")]
@@ -230,5 +290,7 @@ def load_player_games(
     frame["years_exp"] = pd.to_numeric(frame["years_exp"], errors="coerce")
     frame["age"] = (frame["gameday"] - frame["birth_date"]).dt.days / 365.25
     frame["years_since_draft"] = frame["season"] - frame["draft_year"]
-    frame = frame.sort_values(["gameday", "game_id", "player_id"]).reset_index(drop=True)
+    frame = frame.sort_values(["gameday", "game_id", "player_id"]).reset_index(
+        drop=True
+    )
     return frame

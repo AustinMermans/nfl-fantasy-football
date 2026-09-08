@@ -1,9 +1,43 @@
 import pandas as pd
 
+from nfl_fantasy_football.data import ensure_columns
 from nfl_fantasy_football.production import (
     apply_point_calibration,
     veteran_reserve_cap_mask,
 )
+
+
+def test_missing_optional_injury_columns_are_filled_with_nulls() -> None:
+    injuries = pd.DataFrame(
+        {
+            "report_status": ["Questionable"],
+            "practice_primary_injury": ["Knee"],
+            "practice_status": ["Limited"],
+        }
+    )
+    expected = (
+        "report_primary_injury",
+        "report_secondary_injury",
+        "report_status",
+        "practice_primary_injury",
+        "practice_secondary_injury",
+        "practice_status",
+    )
+
+    normalized = ensure_columns(injuries, expected)
+
+    assert list(normalized.columns) == [
+        "report_status",
+        "practice_primary_injury",
+        "practice_status",
+        "report_primary_injury",
+        "report_secondary_injury",
+        "practice_secondary_injury",
+    ]
+    assert normalized["report_status"].iloc[0] == "Questionable"
+    assert normalized["report_primary_injury"].isna().all()
+    assert normalized["report_secondary_injury"].isna().all()
+    assert normalized["practice_secondary_injury"].isna().all()
 
 
 def test_point_calibration_changes_points_without_scaling_baseline() -> None:
@@ -14,9 +48,7 @@ def test_point_calibration_changes_points_without_scaling_baseline() -> None:
             "baseline_fantasy_points": [8.0, 9.0],
         }
     )
-    audit = pd.DataFrame(
-        {"player_id": ["p1"], "point_calibration_scale": [2.0]}
-    )
+    audit = pd.DataFrame({"player_id": ["p1"], "point_calibration_scale": [2.0]})
 
     calibrated = apply_point_calibration(fantasy, audit)
 
