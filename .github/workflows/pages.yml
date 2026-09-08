@@ -55,7 +55,7 @@ jobs:
 
       - name: Install project
         if: github.event_name != 'push'
-        run: pip install -e .
+        run: pip install -e '.[dev]'
 
       - name: Refresh current season forecasts
         if: github.event_name != 'push'
