@@ -1,6 +1,6 @@
 import pandas as pd
 
-from nfl_fantasy_football.features import build_features
+from nfl_fantasy_football.features import build_features, feature_sets
 
 
 def _row(game: int, yards: float, opponent: str = "B") -> dict[str, object]:
@@ -28,10 +28,20 @@ def _row(game: int, yards: float, opponent: str = "B") -> dict[str, object]:
         "total_line": 45.0,
     }
     for column in (
-        "attempts", "passing_yards", "passing_tds", "passing_interceptions",
-        "carries", "rushing_yards", "rushing_tds", "targets", "receptions",
-        "receiving_yards", "receiving_tds", "receiving_air_yards",
-        "target_share", "air_yards_share",
+        "attempts",
+        "passing_yards",
+        "passing_tds",
+        "passing_interceptions",
+        "carries",
+        "rushing_yards",
+        "rushing_tds",
+        "targets",
+        "receptions",
+        "receiving_yards",
+        "receiving_tds",
+        "receiving_air_yards",
+        "target_share",
+        "air_yards_share",
     ):
         row[column] = yards if column == "receiving_yards" else 0.0
     return row
@@ -53,3 +63,8 @@ def test_current_target_change_does_not_change_same_row_features() -> None:
     after = build_features(changed).loc[1, "receiving_yards_ewm4"]
     assert before == after == 10.0
 
+
+def test_feature_sets_have_unique_ordered_columns() -> None:
+    for target in ("attempts", "carries", "targets", "receptions"):
+        for columns in feature_sets(target).values():
+            assert len(columns) == len(set(columns))

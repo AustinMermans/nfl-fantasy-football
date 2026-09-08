@@ -28,8 +28,7 @@ def build_features(player_games: pd.DataFrame) -> pd.DataFrame:
             frame[column] = 0.0
     if "played" not in frame:
         frame["played"] = (
-            frame["offense_snaps"].fillna(0).gt(0)
-            | frame["st_snaps"].fillna(0).gt(0)
+            frame["offense_snaps"].fillna(0).gt(0) | frame["st_snaps"].fillna(0).gt(0)
         ).astype(float)
     for column in (
         "report_primary_injury",
@@ -52,7 +51,9 @@ def build_features(player_games: pd.DataFrame) -> pd.DataFrame:
         history_features[f"{column}_ewm12"] = grouped.transform(
             lambda values: _shifted_ewm(values, 12)
         )
-    frame = pd.concat([frame, pd.DataFrame(history_features, index=frame.index)], axis=1)
+    frame = pd.concat(
+        [frame, pd.DataFrame(history_features, index=frame.index)], axis=1
+    )
 
     team_game = (
         frame.groupby(
@@ -98,7 +99,9 @@ def build_features(player_games: pd.DataFrame) -> pd.DataFrame:
         how="left",
         validate="many_to_one",
     ).merge(
-        opponent_game[opponent_features].rename(columns={"defense_team": "opponent_team"}),
+        opponent_game[opponent_features].rename(
+            columns={"defense_team": "opponent_team"}
+        ),
         on=["game_id", "opponent_team", "position"],
         how="left",
         validate="many_to_one",
@@ -108,9 +111,12 @@ def build_features(player_games: pd.DataFrame) -> pd.DataFrame:
         {"QB": 0.0, "RB": 1.0, "FB": 2.0, "WR": 3.0, "TE": 4.0, "K": 5.0}
     )
     frame["roof_indoor"] = frame["roof"].isin(["closed", "dome"]).astype(float)
-    frame["surface_grass"] = frame["surface"].astype(str).str.contains(
-        "grass", case=False, na=False
-    ).astype(float)
+    frame["surface_grass"] = (
+        frame["surface"]
+        .astype(str)
+        .str.contains("grass", case=False, na=False)
+        .astype(float)
+    )
     team_spread = frame["spread_line"].where(
         frame["home"].eq(1.0), -frame["spread_line"]
     )
@@ -118,9 +124,12 @@ def build_features(player_games: pd.DataFrame) -> pd.DataFrame:
     frame["opponent_implied_points"] = (frame["total_line"] - team_spread) / 2.0
     report = frame["report_status"].fillna("").str.lower()
     practice = frame["practice_status"].fillna("").str.lower()
-    frame["injury_reported"] = frame[
-        ["report_primary_injury", "practice_primary_injury"]
-    ].notna().any(axis=1).astype(float)
+    frame["injury_reported"] = (
+        frame[["report_primary_injury", "practice_primary_injury"]]
+        .notna()
+        .any(axis=1)
+        .astype(float)
+    )
     frame["report_out"] = report.eq("out").astype(float)
     frame["report_doubtful"] = report.eq("doubtful").astype(float)
     frame["report_questionable"] = report.eq("questionable").astype(float)
@@ -131,6 +140,9 @@ def build_features(player_games: pd.DataFrame) -> pd.DataFrame:
 
 
 def feature_sets(target: str) -> dict[str, list[str]]:
+    def unique(columns: list[str]) -> list[str]:
+        return list(dict.fromkeys(columns))
+
     baseline = [f"{target}_ewm12"]
     player_form = [
         "player_games_prior",
@@ -192,13 +204,13 @@ def feature_sets(target: str) -> dict[str, list[str]]:
             "report_questionable",
         ],
     }.get(target, [])
-    screened = list(dict.fromkeys([*workload, *admitted]))
+    screened = unique([*workload, *admitted])
     return {
-        "recent_mean": baseline,
-        "player_form": player_form,
-        "workload": workload,
-        "context": context,
-        "market_context": market,
-        "player_market": player_market,
+        "recent_mean": unique(baseline),
+        "player_form": unique(player_form),
+        "workload": unique(workload),
+        "context": unique(context),
+        "market_context": unique(market),
+        "player_market": unique(player_market),
         "screened": screened,
     }
