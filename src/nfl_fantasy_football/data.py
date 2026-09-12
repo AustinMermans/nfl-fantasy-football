@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+from http.client import IncompleteRead, RemoteDisconnected
 from pathlib import Path
-from urllib.request import urlopen
+import ssl
+import sys
+import time
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 import pandas as pd
 
@@ -44,13 +49,61 @@ STAT_COLUMNS = (
 )
 
 
-def _download(url: str, destination: Path) -> None:
+RETRYABLE_HTTP_STATUS = {408, 429, 500, 502, 503, 504}
+
+
+def _download(
+    url: str,
+    destination: Path,
+    *,
+    attempts: int = 6,
+    base_delay_seconds: float = 2.0,
+) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_suffix(destination.suffix + ".tmp")
-    with urlopen(url, timeout=120) as response, temporary.open("wb") as handle:
-        while chunk := response.read(1024 * 1024):
-            handle.write(chunk)
-    temporary.replace(destination)
+    for attempt in range(1, attempts + 1):
+        request = Request(
+            url,
+            headers={
+                "Accept": "application/octet-stream",
+                "User-Agent": "nfl-fantasy-football-data-refresh/0.1",
+            },
+        )
+        try:
+            with (
+                urlopen(request, timeout=120) as response,
+                temporary.open("wb") as handle,
+            ):
+                while chunk := response.read(1024 * 1024):
+                    handle.write(chunk)
+            temporary.replace(destination)
+            return
+        except HTTPError as error:
+            temporary.unlink(missing_ok=True)
+            if error.code not in RETRYABLE_HTTP_STATUS or attempt == attempts:
+                raise
+            failure: Exception = error
+        except (
+            URLError,
+            TimeoutError,
+            ConnectionError,
+            IncompleteRead,
+            RemoteDisconnected,
+            ssl.SSLError,
+        ) as error:
+            temporary.unlink(missing_ok=True)
+            if attempt == attempts:
+                raise
+            failure = error
+
+        delay = min(base_delay_seconds * 2 ** (attempt - 1), 30.0)
+        print(
+            f"download attempt {attempt}/{attempts} failed for {url}: "
+            f"{failure}; retrying in {delay:g}s",
+            file=sys.stderr,
+            flush=True,
+        )
+        time.sleep(delay)
 
 
 def download_nflverse(seasons: range | list[int], *, refresh: bool = False) -> None:
