@@ -291,11 +291,17 @@ def preseason_feature_snapshots(
 ) -> pd.DataFrame:
     """Build each future week independently so unplayed games never become history."""
     snapshots = []
-    season = int(future["season"].iloc[0])
+    forecast_marker = "__forecast_snapshot_row"
+    history_rows = history.assign(**{forecast_marker: False})
     for _, week_rows in future.groupby("week", sort=True):
-        combined = pd.concat([history, week_rows], ignore_index=True, sort=False)
+        forecast_rows = week_rows.assign(**{forecast_marker: True})
+        combined = pd.concat(
+            [history_rows, forecast_rows], ignore_index=True, sort=False
+        )
         featured = build_features(combined)
-        snapshots.append(featured[featured["season"].eq(season)])
+        snapshots.append(
+            featured[featured[forecast_marker]].drop(columns=forecast_marker)
+        )
     return pd.concat(snapshots, ignore_index=True).sort_values(
         ["week", "game_id", "player_id"]
     )

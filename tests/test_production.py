@@ -3,6 +3,7 @@ import pandas as pd
 from nfl_fantasy_football.data import ensure_columns
 from nfl_fantasy_football.production import (
     apply_point_calibration,
+    preseason_feature_snapshots,
     veteran_reserve_cap_mask,
 )
 
@@ -38,6 +39,41 @@ def test_missing_optional_injury_columns_are_filled_with_nulls() -> None:
     assert normalized["report_primary_injury"].isna().all()
     assert normalized["report_secondary_injury"].isna().all()
     assert normalized["practice_secondary_injury"].isna().all()
+
+
+def test_feature_snapshots_exclude_current_season_history_rows() -> None:
+    def row(game_id: str, week: int, played: float) -> dict[str, object]:
+        return {
+            "game_id": game_id,
+            "gameday": pd.Timestamp("2026-09-01") + pd.Timedelta(days=7 * week),
+            "season": 2026,
+            "week": week,
+            "player_id": "player-1",
+            "player_name": "Player One",
+            "position": "WR",
+            "team": "A",
+            "opponent_team": "B",
+            "offense_snaps": 40.0 * played,
+            "offense_pct": 0.7 * played,
+            "st_snaps": 0.0,
+            "played": played,
+            "home": 1.0,
+            "rest_days": 7.0,
+            "roof": "outdoors",
+            "surface": "grass",
+            "temp": 70.0,
+            "wind": 5.0,
+            "spread_line": -2.5,
+            "total_line": 45.0,
+        }
+
+    history = pd.DataFrame([row("played-game", 1, 1.0)])
+    future = pd.DataFrame([row("future-game-2", 2, 0.0), row("future-game-3", 3, 0.0)])
+
+    snapshots = preseason_feature_snapshots(history, future)
+
+    assert snapshots["game_id"].tolist() == ["future-game-2", "future-game-3"]
+    assert snapshots["player_games_prior"].tolist() == [1.0, 1.0]
 
 
 def test_point_calibration_changes_points_without_scaling_baseline() -> None:
